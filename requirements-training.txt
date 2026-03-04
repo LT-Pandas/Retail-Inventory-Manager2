@@ -1,0 +1,5 @@
+# Optional dependencies for training a cardboard-box detector
+# Install with: pip install -r requirements-training.txt
+ultralytics>=8.2.0
+roboflow>=1.1.30
+pyyaml>=6.0
