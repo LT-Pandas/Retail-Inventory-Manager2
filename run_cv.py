@@ -106,6 +106,7 @@ def main() -> None:
         total = _extract_finger_total(output.results)
         if total is None:
             return
+        print("Sending finger total:", total)
         sender.send_finger_count(total)
 
     try:
