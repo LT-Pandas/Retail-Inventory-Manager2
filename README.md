@@ -64,6 +64,19 @@ python run_cv.py
 python run_cv.py --camera-index 1
 ```
 
+### Raspberry Pi 5 camera fallback (cam/disp 0/1)
+
+```bash
+python run_cv.py --camera-index 0 --fallback-camera-indexes 1
+```
+
+The app now tries OpenCV first and then automatically falls back to `picamera2` (libcamera) for the same indexes.  
+If you want OpenCV-only behavior:
+
+```bash
+python run_cv.py --disable-picamera2-fallback
+```
+
 ### Use a custom hand landmarker model path
 
 ```bash
