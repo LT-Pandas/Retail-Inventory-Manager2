@@ -36,17 +36,38 @@ class CVPipeline:
 def run_webcam_loop(
     pipeline: CVPipeline,
     camera_index: int = 0,
+    fallback_camera_indexes: list[int] | None = None,
     window_name: str = "Modular CV",
     on_output: Callable[[PipelineOutput], None] | None = None,
 ) -> None:
-    cap = cv2.VideoCapture(camera_index)
-    if not cap.isOpened():
-        raise RuntimeError(f"Unable to open webcam index={camera_index}")
+    candidate_indexes: list[int] = [camera_index]
+    if fallback_camera_indexes:
+        for index in fallback_camera_indexes:
+            if index not in candidate_indexes:
+                candidate_indexes.append(index)
+
+    cap = None
+    selected_index = None
+    for index in candidate_indexes:
+        candidate = cv2.VideoCapture(index)
+        if candidate.isOpened():
+            cap = candidate
+            selected_index = index
+            if index != camera_index:
+                print(f"Primary webcam index={camera_index} unavailable. Using fallback index={index}.")
+            break
+        candidate.release()
+
+    if cap is None:
+        attempted = ", ".join(str(index) for index in candidate_indexes)
+        raise RuntimeError(f"Unable to open webcam. Tried indexes: {attempted}")
 
     try:
         while True:
             ok, frame = cap.read()
             if not ok:
+                if selected_index is not None:
+                    print(f"Webcam read failed for index={selected_index}.")
                 break
 
             output = pipeline.step(frame)
