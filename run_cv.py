@@ -26,6 +26,13 @@ def _extract_finger_total(results) -> int | None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Modular MediaPipe CV demo")
     parser.add_argument("--camera-index", type=int, default=0)
+    parser.add_argument(
+        "--fallback-camera-indexes",
+        type=int,
+        nargs="*",
+        default=[1],
+        help="Fallback camera indexes to try if --camera-index fails (default: 1).",
+    )
     parser.add_argument("--max-num-hands", type=int, default=1)
     parser.add_argument("--min-detection-confidence", type=float, default=0.6)
     parser.add_argument("--min-tracking-confidence", type=float, default=0.5)
@@ -110,7 +117,12 @@ def main() -> None:
         sender.send_finger_count(total)
 
     try:
-        run_webcam_loop(pipeline, camera_index=args.camera_index, on_output=on_output)
+        run_webcam_loop(
+            pipeline,
+            camera_index=args.camera_index,
+            fallback_camera_indexes=args.fallback_camera_indexes,
+            on_output=on_output,
+        )
     finally:
         if sender is not None:
             sender.close()
