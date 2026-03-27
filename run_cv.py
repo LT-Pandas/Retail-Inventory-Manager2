@@ -1,17 +1,30 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
+import sys
 
-from cv_modular import CVPipeline, run_webcam_loop
-from cv_modular.finger_serial import FingerSerialSender, FingerSerialSenderConfig
-from cv_modular.processors import (
-    BoxDetectorConfig,
-    FingerCounterConfig,
-    HandBoxDetectorConfig,
-    HandBoxDetectorProcessor,
-    ObjectDetectorConfig,
-    ObjectDetectorProcessor
-)
+PYTHON_VERSION_REQUIRED = (3, 12)
+_REEXEC_ENV_KEY = "RIM_REEXECUTED_WITH_PY312"
+
+
+def _ensure_python_312() -> None:
+    if sys.version_info[:2] == PYTHON_VERSION_REQUIRED:
+        return
+
+    python_312 = shutil.which("python3.12")
+    if python_312 and os.environ.get(_REEXEC_ENV_KEY) != "1":
+        os.environ[_REEXEC_ENV_KEY] = "1"
+        os.execv(python_312, [python_312, *sys.argv])
+
+    required = ".".join(map(str, PYTHON_VERSION_REQUIRED))
+    current = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    raise RuntimeError(
+        f"This program must run on Python {required}. "
+        f"Current interpreter is Python {current}. "
+        "Please run with python3.12 (for example: python3.12 run_cv.py)."
+    )
 
 
 def _extract_finger_total(results) -> int | None:
@@ -81,6 +94,18 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main() -> None:
+    _ensure_python_312()
+    from cv_modular import CVPipeline, run_webcam_loop
+    from cv_modular.finger_serial import FingerSerialSender, FingerSerialSenderConfig
+    from cv_modular.processors import (
+        BoxDetectorConfig,
+        FingerCounterConfig,
+        HandBoxDetectorConfig,
+        HandBoxDetectorProcessor,
+        ObjectDetectorConfig,
+        ObjectDetectorProcessor,
+    )
+
     args = build_parser().parse_args()
 
     processors = [
