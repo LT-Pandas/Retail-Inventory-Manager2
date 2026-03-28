@@ -33,7 +33,7 @@ The finger-counting processor follows the MediaPipe Tasks **Hand Landmarker** Py
 ### 1) Create and activate a virtual environment
 
 ```bash
-python3.12 -m venv .venv
+python -m venv .venv
 source .venv/bin/activate
 ```
 
@@ -46,7 +46,7 @@ pip install -r requirements.txt
 ### 3) Run finger counting
 
 ```bash
-python3.12 run_cv.py
+python run_cv.py
 ```
 
 - Press **`q`** to quit.
@@ -61,19 +61,19 @@ python3.12 run_cv.py
 ### Use another camera index
 
 ```bash
-python3.12 run_cv.py --camera-index 1
+python run_cv.py --camera-index 1
 ```
 
 ### Use a custom hand landmarker model path
 
 ```bash
-python3.12 run_cv.py --hand-model /absolute/path/to/hand_landmarker.task
+python run_cv.py --hand-model /absolute/path/to/hand_landmarker.task
 ```
 
 ### Tune hand detector confidence
 
 ```bash
-python3.12 run_cv.py \
+python run_cv.py \
   --min-detection-confidence 0.7 \
   --min-presence-confidence 0.6 \
   --min-tracking-confidence 0.6
@@ -82,13 +82,13 @@ python3.12 run_cv.py \
 ### If your video feed is **not mirrored**
 
 ```bash
-python3.12 run_cv.py --no-assume-selfie-view
+python run_cv.py --no-assume-selfie-view
 ```
 
 ### Send live finger count to Arduino over serial (while keeping the webcam view)
 
 ```bash
-python3.12 run_cv.py --serial-port COM5 --serial-baud 115200
+python run_cv.py --serial-port COM5 --serial-baud 115200
 ```
 
 - Linux/macOS port examples: `/dev/ttyUSB0`, `/dev/ttyACM0`, `/dev/tty.usbmodemXXXX`
@@ -100,13 +100,13 @@ python3.12 run_cv.py --serial-port COM5 --serial-baud 115200
 ### Hand + box detection now run together
 
 ```bash
-python3.12 run_cv.py
+python run_cv.py
 ```
 
 Optional box tuning:
 
 ```bash
-python3.12 run_cv.py --box-min-area 4000
+python run_cv.py --box-min-area 4000
 ```
 
 The unified processor overlays both hand landmarks / `Fingers: N` and rectangular box outlines / `Boxes: N` in the same frame.
@@ -120,13 +120,13 @@ The architecture supports MediaPipe object detection as a second processor.
 Run with the built-in default model (auto-downloaded on first run):
 
 ```bash
-python3.12 run_cv.py --detect-objects
+python run_cv.py --detect-objects
 ```
 
 Use your own model if desired:
 
 ```bash
-python3.12 run_cv.py --detect-objects --object-model /absolute/path/to/model.tflite
+python run_cv.py --detect-objects --object-model /absolute/path/to/model.tflite
 ```
 
 By default, detections are filtered to box/package-like labels (`box`, `package`, `parcel`, `carton`) so the overlay stays focused on inventory-style objects.
