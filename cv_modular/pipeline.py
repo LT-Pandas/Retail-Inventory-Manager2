@@ -5,6 +5,7 @@ from typing import Callable
 
 import cv2
 import numpy as np
+from picamera2 import Picamera2
 
 from .interfaces import FrameProcessor, ProcessorResult
 
@@ -46,26 +47,38 @@ def run_webcam_loop(
             if index not in candidate_indexes:
                 candidate_indexes.append(index)
 
-    cap = None
+    picam2 = None
     selected_index = None
     for index in candidate_indexes:
-        candidate = cv2.VideoCapture(index)
-        if candidate.isOpened():
-            cap = candidate
+        candidate = None
+        try:
+            candidate = Picamera2(camera_num=index)
+            config = candidate.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)})
+            candidate.configure(config)
+            candidate.start()
+            candidate.capture_array()
+            picam2 = candidate
             selected_index = index
             if index != camera_index:
                 print(f"Primary webcam index={camera_index} unavailable. Using fallback index={index}.")
             break
-        candidate.release()
+        except Exception:
+            if candidate is not None:
+                try:
+                    candidate.stop()
+                except Exception:
+                    pass
 
-    if cap is None:
+    if picam2 is None:
         attempted = ", ".join(str(index) for index in candidate_indexes)
         raise RuntimeError(f"Unable to open webcam. Tried indexes: {attempted}")
 
     try:
         while True:
-            ok, frame = cap.read()
-            if not ok:
+            try:
+                frame = picam2.capture_array()
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            except Exception:
                 if selected_index is not None:
                     print(f"Webcam read failed for index={selected_index}.")
                 break
@@ -79,6 +92,6 @@ def run_webcam_loop(
             if key == ord("q"):
                 break
     finally:
-        cap.release()
+        picam2.stop()
         pipeline.close()
         cv2.destroyAllWindows()
