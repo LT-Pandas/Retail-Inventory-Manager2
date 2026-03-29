@@ -10,7 +10,7 @@ from cv_modular.processors import (
     HandBoxDetectorConfig,
     HandBoxDetectorProcessor,
     ObjectDetectorConfig,
-    ObjectDetectorProcessor
+    ObjectDetectorProcessor,
 )
 
 
@@ -24,7 +24,7 @@ def _extract_finger_total(results) -> int | None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Modular MediaPipe CV demo")
+    parser = argparse.ArgumentParser(description="Modular OpenCV CV demo")
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument(
         "--fallback-camera-indexes",
@@ -41,7 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--hand-model",
         type=str,
         default=None,
-        help="Optional path to a MediaPipe hand_landmarker.task model.",
+        help="Deprecated: kept for backward compatibility; OpenCV hand tracking ignores this.",
     )
     parser.add_argument(
         "--no-assume-selfie-view",
@@ -51,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--detect-objects",
         action="store_true",
-        help="Enable MediaPipe object detection (auto-downloads default model).",
+        help="Enable optional MediaPipe object detection (auto-downloads default model).",
     )
     parser.add_argument(
         "--object-model",
@@ -98,6 +98,13 @@ def main() -> None:
             )
         )
     ]
+
+
+    if (args.detect_objects or args.object_model) and (ObjectDetectorProcessor is None or ObjectDetectorConfig is None):
+        raise RuntimeError(
+            "Object detection requires MediaPipe, which is not installed. "
+            "Disable --detect-objects or install mediapipe."
+        )
 
     if args.detect_objects or args.object_model:
         processors.append(ObjectDetectorProcessor(ObjectDetectorConfig(model_path=args.object_model)))

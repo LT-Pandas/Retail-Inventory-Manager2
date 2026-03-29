@@ -1,13 +1,12 @@
 # Retail-Inventory-Manager
 
-This repository includes an **absolute-minimum modular computer vision starter** based on MediaPipe so you can:
+This repository includes an **absolute-minimum modular computer vision starter** based on OpenCV so you can:
 
 1. Detect how many fingers are currently held up (webcam, real time).
 2. Keep a clean module layout so object detection and future CV features are easy to plug in.
 3. Detect rectangular boxes at the same time as hands/fingers using a unified processor (no trained box model needed).
 
-The finger-counting processor follows the MediaPipe Tasks **Hand Landmarker** Python guide:
-- https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker/python
+The finger-counting processor now uses an OpenCV-only contour/convexity-defect approach so it can run on Raspberry Pi Python 3.13 + Picamera2 setups without MediaPipe.
 
 ---
 
@@ -20,7 +19,7 @@ The finger-counting processor follows the MediaPipe Tasks **Hand Landmarker** Py
 │   ├── pipeline.py                    # processor orchestration + webcam loop
 │   └── processors/
 │       ├── box_detector.py            # contour-based rectangular box detection plugin
-│       ├── finger_counter.py          # MediaPipe Tasks Hand Landmarker finger counting plugin
+│       ├── finger_counter.py          # OpenCV-only hand tracking + finger counting plugin
 │       └── object_detector.py         # optional MediaPipe Tasks object detection plugin
 ├── run_cv.py                          # one command entrypoint
 └── requirements.txt
@@ -43,6 +42,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+If you also want optional object detection, install MediaPipe separately (it may not be available on Python 3.13):
+
+```bash
+pip install mediapipe
+```
+
 ### 3) Run finger counting
 
 ```bash
@@ -50,9 +55,7 @@ python run_cv.py
 ```
 
 - Press **`q`** to quit.
-- You will see hand landmarks and a `Fingers: N` overlay in the OpenCV window.
-- On first run, the hand landmarker `.task` model is cached automatically at
-  `~/.cache/retail-inventory-manager/hand_landmarker.task`.
+- You will see hand contour tracking and a `Fingers: N` overlay in the OpenCV window.
 
 ---
 
@@ -64,13 +67,7 @@ python run_cv.py
 python run_cv.py --camera-index 1
 ```
 
-### Use a custom hand landmarker model path
-
-```bash
-python run_cv.py --hand-model /absolute/path/to/hand_landmarker.task
-```
-
-### Tune hand detector confidence
+### Tune hand detector compatibility options
 
 ```bash
 python run_cv.py \
@@ -109,7 +106,7 @@ Optional box tuning:
 python run_cv.py --box-min-area 4000
 ```
 
-The unified processor overlays both hand landmarks / `Fingers: N` and rectangular box outlines / `Boxes: N` in the same frame.
+The unified processor overlays both OpenCV hand tracking / `Fingers: N` and rectangular box outlines / `Boxes: N` in the same frame.
 
 ---
 

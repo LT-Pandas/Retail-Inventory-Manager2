@@ -3,14 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import sys
-import time
-from urllib.request import urlretrieve
 
 import cv2
-import mediapipe as mp
 import numpy as np
-from mediapipe.tasks.python import BaseOptions
-from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions, RunningMode
 
 if __package__ in (None, ""):
     # Allow direct execution (e.g. `python cv_modular/processors/finger_counter.py`).
@@ -20,121 +15,106 @@ else:
     from ..interfaces import ProcessorResult
 
 
-MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/hand_landmarker/"
-    "hand_landmarker/float16/1/hand_landmarker.task"
-)
-
-
 @dataclass
 class FingerCounterConfig:
     max_num_hands: int = 1
-    min_detection_confidence: float = 0.6
-    min_tracking_confidence: float = 0.5
-    min_presence_confidence: float = 0.5
+    min_detection_confidence: float = 0.6  # Kept for CLI compatibility.
+    min_tracking_confidence: float = 0.5  # Kept for CLI compatibility.
+    min_presence_confidence: float = 0.5  # Kept for CLI compatibility.
     assume_selfie_view: bool = True
-    model_path: str | None = None
-
-
-def _resolve_hand_landmarker_model(config: FingerCounterConfig) -> str:
-    if config.model_path:
-        model_path = Path(config.model_path).expanduser().resolve()
-        if not model_path.exists():
-            raise FileNotFoundError(f"Hand landmarker model not found: {model_path}")
-        return str(model_path)
-
-    cache_dir = Path.home() / ".cache" / "retail-inventory-manager"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    default_model = cache_dir / "hand_landmarker.task"
-
-    if not default_model.exists():
-        urlretrieve(MODEL_URL, default_model)
-
-    return str(default_model)
+    model_path: str | None = None  # Kept for backward compatibility; unused.
+    min_hand_area: int = 3000
 
 
 class FingerCounterProcessor:
+    """OpenCV-based hand tracking + finger counting.
+
+    This implementation avoids MediaPipe so it can run on Raspberry Pi Python 3.13
+    environments where MediaPipe wheels may be unavailable.
+    """
+
     name = "finger_counter"
 
     def __init__(self, config: FingerCounterConfig | None = None) -> None:
         self.config = config or FingerCounterConfig()
-        model_path = _resolve_hand_landmarker_model(self.config)
-
-        options = HandLandmarkerOptions(
-            base_options=BaseOptions(model_asset_path=model_path),
-            running_mode=RunningMode.VIDEO,
-            num_hands=self.config.max_num_hands,
-            min_hand_detection_confidence=self.config.min_detection_confidence,
-            min_hand_presence_confidence=self.config.min_presence_confidence,
-            min_tracking_confidence=self.config.min_tracking_confidence,
-        )
-        self.landmarker = HandLandmarker.create_from_options(options)
 
     def process(self, frame: np.ndarray) -> ProcessorResult:
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        timestamp_ms = int(time.time() * 1000)
+        mask = self._build_skin_mask(frame)
+        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        result = self.landmarker.detect_for_video(mp_image, timestamp_ms)
+        if not contours:
+            cv2.putText(frame, "Fingers: 0", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 50, 0), 2)
+            return ProcessorResult(name=self.name, data={"per_hand": [], "total": 0})
 
-        counts: list[int] = []
+        hand_contour = max(contours, key=cv2.contourArea)
+        contour_area = cv2.contourArea(hand_contour)
 
-        for idx, hand_landmarks in enumerate(result.hand_landmarks):
-            handedness = result.handedness[idx][0].category_name if idx < len(result.handedness) else "Unknown"
-            finger_count = self._count_extended_fingers(hand_landmarks, handedness)
-            counts.append(finger_count)
+        if contour_area < self.config.min_hand_area:
+            cv2.putText(frame, "Fingers: 0", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 50, 0), 2)
+            return ProcessorResult(name=self.name, data={"per_hand": [], "total": 0})
 
-            self._draw_hand_landmarks(frame, hand_landmarks)
-            wrist = hand_landmarks[0]
-            h, w = frame.shape[:2]
-            origin = (int(wrist.x * w), int(wrist.y * h) - 20)
-            cv2.putText(
-                frame,
-                f"{handedness}: {finger_count}",
-                origin,
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
-                (0, 255, 0),
-                2,
-                cv2.LINE_AA,
-            )
+        finger_count = self._count_fingers_from_contour(hand_contour)
+        x, y, w, h = cv2.boundingRect(hand_contour)
 
-        total = max(counts) if counts else 0
-        cv2.putText(frame, f"Fingers: {total}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 50, 0), 2)
-        return ProcessorResult(name=self.name, data={"per_hand": counts, "total": total})
+        cv2.drawContours(frame, [hand_contour], -1, (0, 200, 255), 2)
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (50, 200, 255), 2)
+        cv2.putText(
+            frame,
+            f"Hand: {finger_count}",
+            (x, max(25, y - 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
+            2,
+            cv2.LINE_AA,
+        )
 
-    def _draw_hand_landmarks(self, frame: np.ndarray, hand_landmarks) -> None:
-        h, w = frame.shape[:2]
-        points = [(int(lm.x * w), int(lm.y * h)) for lm in hand_landmarks]
+        cv2.putText(frame, f"Fingers: {finger_count}", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 50, 0), 2)
+        return ProcessorResult(name=self.name, data={"per_hand": [finger_count], "total": finger_count})
 
-        for start_idx, end_idx in mp.solutions.hands.HAND_CONNECTIONS:
-            cv2.line(frame, points[start_idx], points[end_idx], (0, 200, 255), 2, cv2.LINE_AA)
+    def _build_skin_mask(self, frame: np.ndarray) -> np.ndarray:
+        ycrcb = cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb)
 
-        for x, y in points:
-            cv2.circle(frame, (x, y), 3, (255, 255, 255), -1, cv2.LINE_AA)
+        # Broad skin-color range in YCrCb that works reasonably for varied lighting.
+        lower = np.array([0, 133, 77], dtype=np.uint8)
+        upper = np.array([255, 173, 127], dtype=np.uint8)
+        mask = cv2.inRange(ycrcb, lower, upper)
 
-    def _count_extended_fingers(self, hand_landmarks, handedness_label: str) -> int:
-        finger_tip_ids = [8, 12, 16, 20]
-        finger_pip_ids = [6, 10, 14, 18]
+        mask = cv2.GaussianBlur(mask, (7, 7), 0)
+        kernel = np.ones((3, 3), np.uint8)
+        mask = cv2.erode(mask, kernel, iterations=1)
+        mask = cv2.dilate(mask, kernel, iterations=2)
+        return mask
 
-        count = 0
-        for tip_id, pip_id in zip(finger_tip_ids, finger_pip_ids):
-            if hand_landmarks[tip_id].y < hand_landmarks[pip_id].y:
-                count += 1
+    def _count_fingers_from_contour(self, contour: np.ndarray) -> int:
+        hull_indices = cv2.convexHull(contour, returnPoints=False)
+        if hull_indices is None or len(hull_indices) < 3:
+            return 0
 
-        thumb_tip = hand_landmarks[4]
-        thumb_ip = hand_landmarks[3]
-        is_right = handedness_label.lower() == "right"
+        defects = cv2.convexityDefects(contour, hull_indices)
+        if defects is None:
+            return 1
 
-        if self.config.assume_selfie_view:
-            thumb_extended = thumb_tip.x < thumb_ip.x if is_right else thumb_tip.x > thumb_ip.x
-        else:
-            thumb_extended = thumb_tip.x > thumb_ip.x if is_right else thumb_tip.x < thumb_ip.x
+        finger_gaps = 0
+        for i in range(defects.shape[0]):
+            s, e, f, depth = defects[i, 0]
+            start = contour[s][0]
+            end = contour[e][0]
+            far = contour[f][0]
 
-        if thumb_extended:
-            count += 1
+            a = np.linalg.norm(end - start)
+            b = np.linalg.norm(far - start)
+            c = np.linalg.norm(end - far)
 
-        return count
+            if b == 0 or c == 0:
+                continue
+
+            angle = np.degrees(np.arccos(np.clip((b**2 + c**2 - a**2) / (2 * b * c), -1.0, 1.0)))
+            if angle < 90 and depth > 6000:
+                finger_gaps += 1
+
+        # Heuristic: number of extended fingers is gaps + 1, clipped to plausible range.
+        return max(0, min(5, finger_gaps + 1))
 
     def close(self) -> None:
-        self.landmarker.close()
+        return
