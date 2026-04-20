@@ -132,6 +132,56 @@ By default, detections are filtered to box/package-like labels (`box`, `package`
 
 
 
+
+## OLED output on Raspberry Pi (SPI)
+
+You can mirror the live count to an SPI OLED (for example SH1107 / SSD1309 / SSD1327 via `luma.oled`).
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Run with OLED enabled (auto driver fallback: `sh1107` -> `ssd1309` -> `ssd1327`):
+
+```bash
+python run_cv.py --oled-enabled
+```
+
+Choose a specific driver:
+
+```bash
+python run_cv.py --oled-enabled --oled-driver sh1107
+```
+
+If your display only works with another controller:
+
+```bash
+python run_cv.py --oled-enabled --oled-driver ssd1309
+# or
+python run_cv.py --oled-enabled --oled-driver ssd1327
+```
+
+Control what number is sent to OLED:
+
+```bash
+# Finger count (default CV mode)
+python run_cv.py --oled-enabled --oled-count-mode fingers
+
+# People count (with Roboflow people detector enabled)
+python run_cv.py --oled-enabled --count-people --oled-count-mode people
+```
+
+SPI/GPIO pins are configurable if your wiring differs:
+
+```bash
+python run_cv.py --oled-enabled --oled-spi-port 0 --oled-spi-device 0 --oled-gpio-dc 25 --oled-gpio-rst 24
+```
+
+The OLED output is a single number that updates only when the count changes.
+
+---
 ## Roboflow people counting (stereo-camera ready)
 
 This project now supports counting people with Roboflow model `crowd-counting-dataset-w3o7w/2`.
