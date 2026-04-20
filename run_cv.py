@@ -4,6 +4,7 @@ import argparse
 
 from cv_modular import CVPipeline, run_webcam_loop
 from cv_modular.finger_serial import FingerSerialSender, FingerSerialSenderConfig
+from cv_modular.oled_display import OledCountDisplay, OledDisplayConfig
 from cv_modular.processors import (
     BoxDetectorConfig,
     FingerCounterConfig,
@@ -30,6 +31,18 @@ def _extract_people_total(results) -> int | None:
         if result.name == "people_counter":
             return result.data.get("count")
     return None
+
+
+def _extract_total(results, mode: str = "auto") -> int | None:
+    if mode == "fingers":
+        return _extract_finger_total(results)
+    if mode == "people":
+        return _extract_people_total(results)
+
+    total = _extract_finger_total(results)
+    if total is None:
+        total = _extract_people_total(results)
+    return total
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -121,6 +134,27 @@ def build_parser() -> argparse.ArgumentParser:
         default="left",
         help="Which eye to run inference on when --stereo-layout is used.",
     )
+    parser.add_argument(
+        "--oled-enabled",
+        action="store_true",
+        help="Enable OLED SPI output for the current count.",
+    )
+    parser.add_argument(
+        "--oled-driver",
+        choices=["auto", "sh1107", "ssd1309", "ssd1327"],
+        default="auto",
+        help="OLED driver to use. Default auto tries sh1107, ssd1309, then ssd1327.",
+    )
+    parser.add_argument("--oled-spi-port", type=int, default=0, help="OLED SPI port index.")
+    parser.add_argument("--oled-spi-device", type=int, default=0, help="OLED SPI chip-select device index.")
+    parser.add_argument("--oled-gpio-dc", type=int, default=25, help="OLED DC GPIO pin.")
+    parser.add_argument("--oled-gpio-rst", type=int, default=24, help="OLED reset GPIO pin.")
+    parser.add_argument(
+        "--oled-count-mode",
+        choices=["auto", "fingers", "people"],
+        default="auto",
+        help="Which count to render on OLED: fingers, people, or auto fallback.",
+    )
     return parser
 
 
@@ -177,18 +211,30 @@ def main() -> None:
     if args.serial_port:
         sender = FingerSerialSender(FingerSerialSenderConfig(port=args.serial_port, baud=args.serial_baud))
 
+    oled_display = None
+    if args.oled_enabled:
+        oled_display = OledCountDisplay(
+            OledDisplayConfig(
+                spi_port=args.oled_spi_port,
+                spi_device=args.oled_spi_device,
+                gpio_dc=args.oled_gpio_dc,
+                gpio_rst=args.oled_gpio_rst,
+                driver=args.oled_driver,
+            )
+        )
+        print(f"OLED display enabled using driver: {oled_display.active_driver}")
+
     def on_output(output) -> None:
-        if sender is None:
-            return
-
-        total = _extract_finger_total(output.results)
-        if total is None:
-            total = _extract_people_total(output.results)
+        total = _extract_total(output.results, mode=args.oled_count_mode)
         if total is None:
             return
 
-        print("Sending count:", total)
-        sender.send_finger_count(total)
+        if sender is not None:
+            print("Sending count:", total)
+            sender.send_finger_count(total)
+
+        if oled_display is not None:
+            oled_display.render_count(total)
 
     try:
         run_webcam_loop(
@@ -200,6 +246,8 @@ def main() -> None:
     finally:
         if sender is not None:
             sender.close()
+        if oled_display is not None:
+            oled_display.close()
 
 
 if __name__ == "__main__":
