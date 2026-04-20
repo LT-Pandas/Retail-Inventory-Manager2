@@ -1,3 +1,4 @@
 opencv-python>=4.9.0.80
 numpy>=1.24.0
 pyserial>=3.5
+inference-sdk>=0.49.0

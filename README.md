@@ -131,6 +131,39 @@ By default, detections are filtered to box/package-like labels (`box`, `package`
 ---
 
 
+
+## Roboflow people counting (stereo-camera ready)
+
+This project now supports counting people with Roboflow model `crowd-counting-dataset-w3o7w/2`.
+
+1. Export your key:
+
+```bash
+export ROBOFLOW_API_KEY=your_key_here
+```
+
+2. Run people counting:
+
+```bash
+python run_cv.py --count-people
+```
+
+For side-by-side stereo streams, choose layout + eye:
+
+```bash
+python run_cv.py --count-people --stereo-layout left-right --stereo-eye left
+```
+
+Useful knobs:
+
+- `--roboflow-model-id` (defaults to `crowd-counting-dataset-w3o7w/2`)
+- `--people-confidence-threshold` (defaults to `0.35`)
+- `--roboflow-api-key` (optional override for `ROBOFLOW_API_KEY`)
+
+The OpenCV overlay will display both person boxes and a `People: N` counter.
+
+---
+
 ## Training a dedicated cardboard-box CV model
 
 A non-destructive training workflow (Roboflow + YOLOv8) is included here:

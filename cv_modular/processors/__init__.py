@@ -21,3 +21,14 @@ else:
         "ObjectDetectorConfig",
         "ObjectDetectorProcessor",
     ])
+
+try:
+    from .people_counter import PeopleCounterConfig, PeopleCounterProcessor
+except Exception:  # pragma: no cover - optional dependency (roboflow inference sdk)
+    PeopleCounterConfig = None
+    PeopleCounterProcessor = None
+else:
+    __all__.extend([
+        "PeopleCounterConfig",
+        "PeopleCounterProcessor",
+    ])
