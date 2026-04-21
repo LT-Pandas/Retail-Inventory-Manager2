@@ -160,10 +160,16 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Run with OLED enabled (auto driver fallback: `ssd1309` -> `sh1107` -> `ssd1327`):
+OLED output is enabled by default now, so pressing the play/run button on `run_cv.py` will automatically initialize the display (auto driver fallback: `ssd1309` -> `sh1107` -> `ssd1327`):
 
 ```bash
-python run_cv.py --oled-enabled
+python run_cv.py
+```
+
+If you ever want to run without OLED output:
+
+```bash
+python run_cv.py --no-oled-enabled
 ```
 
 On startup, a test message is now shown for 2 seconds by default (`RPI5 OLED OK`) so you can quickly confirm the display wiring before finger counts begin.
