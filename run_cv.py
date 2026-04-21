@@ -143,7 +143,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--button-gpio-pin",
         type=int,
         default=17,
-        help="BCM GPIO pin used for button input when --button-controlled is enabled.",
+        help=("BCM GPIO pin used for button input when --button-controlled is enabled. "
+             "Important: BCM 17 is physical pin 11 (NOT physical pin 17)."),
     )
     parser.add_argument(
         "--button-hold-time",
@@ -196,7 +197,9 @@ def main() -> None:
 
         print(
             "Button control enabled on BCM GPIO "
-            f"{args.button_gpio_pin} (wire the other button lead to GND pin 14). "
+            f"{args.button_gpio_pin}. BCM numbering is used by this app. "
+            "If using BCM 17, wire to physical pin 11 (NOT physical pin 17). "
+            "Wire the other button lead to a GND pin (for example physical pin 14). "
             "Press once to start (equivalent to pressing the triangle run button)."
         )
         print("Waiting for button press to start...")

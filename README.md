@@ -206,13 +206,18 @@ The OLED output is a single number that updates only when the count changes.
 
 ---
 
-## Start/stop with a physical button (GPIO 17 + GND pin 14)
+## Start with a physical button (BCM GPIO 17 + GND)
 
 You can run the app in button-controlled mode so it only starts after a button press (equivalent to pressing the triangle run button).
 
+⚠️ Use **BCM numbering**, not physical pin numbers.
+- `--button-gpio-pin 17` means **BCM GPIO 17 = physical pin 11**.
+- **Do not use physical pin 17** for this signal; physical pin 17 is **3.3V power**, not GPIO.
+
 Wiring:
-- One button leg -> **BCM GPIO 17** (physical pin 11)
-- Other button leg -> **GND physical pin 14**
+- One button leg -> **BCM GPIO 17** (**physical pin 11**)
+- Other button leg -> **any GND pin** (for example physical pin 14)
+- No external pull-up resistor is required (the code uses `pull_up=True`).
 
 Run:
 
@@ -221,8 +226,7 @@ python run_cv.py --button-controlled --button-gpio-pin 17
 ```
 
 Behavior:
-- **First press**: starts the CV loop.
-- **Second press**: cleanly stops the CV loop and exits the program.
+- **Button press**: starts the CV loop.
 
 ---
 
