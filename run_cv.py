@@ -4,6 +4,7 @@ import argparse
 import time
 
 from cv_modular import CVPipeline, run_webcam_loop
+from cv_modular.ble_uint8 import BleUint8Server, BleUint8ServerConfig
 from cv_modular.finger_serial import FingerSerialSender, FingerSerialSenderConfig
 from cv_modular.oled_display import OledCountDisplay, OledDisplayConfig
 from cv_modular.processors import (
@@ -101,6 +102,36 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=115200,
         help="Baud rate for serial finger-count messages.",
+    )
+    parser.add_argument(
+        "--ble-enabled",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Enable BLE uint8 GATT server for nRF Connect phone app (default: disabled).",
+    )
+    parser.add_argument(
+        "--ble-adapter-address",
+        type=str,
+        default="B8:27:EB:00:00:01",
+        help="Bluetooth adapter MAC address used by BlueZ.",
+    )
+    parser.add_argument(
+        "--ble-local-name",
+        type=str,
+        default="FingerCountPi",
+        help="Advertised BLE local name shown in nRF Connect.",
+    )
+    parser.add_argument(
+        "--ble-service-uuid",
+        type=str,
+        default="12345678-1234-5678-1234-56789abcdef0",
+        help="BLE service UUID for finger count.",
+    )
+    parser.add_argument(
+        "--ble-characteristic-uuid",
+        type=str,
+        default="12345678-1234-5678-1234-56789abcdef1",
+        help="BLE characteristic UUID for uint8 finger count.",
     )
     parser.add_argument(
         "--oled-enabled",
@@ -207,6 +238,20 @@ def main() -> None:
     if args.serial_port:
         sender = FingerSerialSender(FingerSerialSenderConfig(port=args.serial_port, baud=args.serial_baud))
 
+    ble_server = None
+    last_total: int | None = None
+    if args.ble_enabled:
+        ble_server = BleUint8Server(
+            BleUint8ServerConfig(
+                adapter_address=args.ble_adapter_address,
+                local_name=args.ble_local_name,
+                service_uuid=args.ble_service_uuid,
+                characteristic_uuid=args.ble_characteristic_uuid,
+            )
+        )
+        print("BLE uint8 server enabled.")
+        print("In nRF Connect: connect, enable notifications, then press 'o' in the CV window.")
+
     oled_display = None
     if args.oled_enabled:
         oled_display = OledCountDisplay(
@@ -226,9 +271,11 @@ def main() -> None:
                 time.sleep(args.oled_test_seconds)
 
     def on_output(output) -> None:
+        nonlocal last_total
         total = _extract_finger_total(output.results)
         if total is None:
             return
+        last_total = total
 
         if sender is not None:
             print("Sending count:", total)
@@ -236,6 +283,19 @@ def main() -> None:
 
         if oled_display is not None:
             oled_display.render_count(total)
+
+        if ble_server is not None:
+            ble_server.set_value(total)
+
+    def on_key(key: int) -> bool:
+        if key == ord("o") and ble_server is not None:
+            if last_total is None:
+                print("No finger count available yet; nothing sent over BLE.")
+                return False
+            ble_server.set_value(last_total)
+            ble_server.notify()
+            print(f"BLE notify sent (uint8): {last_total}")
+        return False
 
     def run_cv_once() -> None:
         run_webcam_loop(
@@ -252,6 +312,7 @@ def main() -> None:
             camera_sharpness=args.camera_sharpness,
             camera_autofocus=not args.no_camera_autofocus,
             camera_lens_position=args.camera_lens_position,
+            on_key=on_key,
         )
 
     try:
@@ -267,6 +328,8 @@ def main() -> None:
     finally:
         if sender is not None:
             sender.close()
+        if ble_server is not None:
+            ble_server.close()
         if oled_display is not None:
             oled_display.close()
         if button is not None:

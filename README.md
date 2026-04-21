@@ -55,6 +55,7 @@ python run_cv.py
 ```
 
 - Press **`q`** to quit.
+- Press **`o`** to send the latest finger count as a **UINT8 BLE notification** (when BLE is enabled).
 - You will see hand contour tracking and a `Fingers: N` overlay in the OpenCV window.
 
 ---
@@ -108,6 +109,27 @@ python run_cv.py --serial-port COM5 --serial-baud 115200
 - Linux/macOS port examples: `/dev/ttyUSB0`, `/dev/ttyACM0`, `/dev/tty.usbmodemXXXX`
 - Message format: `FINGERS:<count>\n` (for example `FINGERS:3`)
 - Updates are sent only when the count changes, capped at ~20 Hz.
+
+### Send UINT8 finger count to nRF Connect on phone over Raspberry Pi Bluetooth (BLE)
+
+Install optional BLE dependency on the Pi:
+
+```bash
+pip install bluezero
+```
+
+Run with BLE enabled:
+
+```bash
+python run_cv.py --ble-enabled --ble-adapter-address B8:27:EB:00:00:01
+```
+
+Then in nRF Connect:
+
+1. Scan and connect to `FingerCountPi` (or your `--ble-local-name`).
+2. Find service UUID `12345678-1234-5678-1234-56789abcdef0`.
+3. Enable notifications on characteristic UUID `12345678-1234-5678-1234-56789abcdef1`.
+4. Press **`o`** in the OpenCV window to push the current finger count as a **single UINT8 value**.
 
 ---
 
