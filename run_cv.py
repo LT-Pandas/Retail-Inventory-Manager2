@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from dataclasses import dataclass
 
 from cv_modular import CVPipeline, run_webcam_loop
 from cv_modular.finger_serial import FingerSerialSender, FingerSerialSenderConfig
@@ -130,7 +131,34 @@ def build_parser() -> argparse.ArgumentParser:
         default=2.0,
         help="How long to display the startup OLED test text.",
     )
+    parser.add_argument(
+        "--button-controlled",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Require a physical button to start/stop CV processing. "
+            "First press starts capture, second press stops capture."
+        ),
+    )
+    parser.add_argument(
+        "--button-gpio-pin",
+        type=int,
+        default=17,
+        help="BCM GPIO pin used for button input when --button-controlled is enabled.",
+    )
+    parser.add_argument(
+        "--button-hold-time",
+        type=float,
+        default=0.05,
+        help="Minimum button hold time in seconds to register a press.",
+    )
     return parser
+
+
+@dataclass
+class _ButtonState:
+    presses: int = 0
+    stop_requested: bool = False
 
 
 def main() -> None:
@@ -161,6 +189,37 @@ def main() -> None:
     if args.detect_objects or args.object_model:
         processors.append(ObjectDetectorProcessor(ObjectDetectorConfig(model_path=args.object_model)))
     pipeline = CVPipeline(processors)
+
+    button = None
+    button_state = _ButtonState()
+    if args.button_controlled:
+        try:
+            from gpiozero import Button
+        except Exception as exc:
+            raise RuntimeError(
+                "Button control requires gpiozero. Install it with `pip install gpiozero`."
+            ) from exc
+
+        button = Button(args.button_gpio_pin, pull_up=True, hold_time=args.button_hold_time, bounce_time=0.1)
+
+        def _on_button_press() -> None:
+            button_state.presses += 1
+            if button_state.presses >= 2:
+                button_state.stop_requested = True
+                print("Button press detected: stopping CV loop.")
+            else:
+                print("Button press detected: starting CV loop.")
+
+        button.when_pressed = _on_button_press
+        print(
+            "Button control enabled on BCM GPIO "
+            f"{args.button_gpio_pin} (wire the other button lead to GND pin 14). "
+            "Press once to start, press again to stop."
+        )
+        print("Waiting for first button press to start...")
+        button.wait_for_press()
+        button_state.presses = 1
+        print("Starting CV loop after button press.")
 
     sender = None
     if args.serial_port:
@@ -211,12 +270,15 @@ def main() -> None:
             camera_sharpness=args.camera_sharpness,
             camera_autofocus=not args.no_camera_autofocus,
             camera_lens_position=args.camera_lens_position,
+            should_stop=(lambda: button_state.stop_requested) if button is not None else None,
         )
     finally:
         if sender is not None:
             sender.close()
         if oled_display is not None:
             oled_display.close()
+        if button is not None:
+            button.close()
 
 
 if __name__ == "__main__":
