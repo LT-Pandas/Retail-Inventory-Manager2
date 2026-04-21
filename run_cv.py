@@ -202,9 +202,6 @@ def main() -> None:
             "Wire the other button lead to a GND pin (for example physical pin 14). "
             "Press once to start (equivalent to pressing the triangle run button)."
         )
-        print("Waiting for button press to start...")
-        button.wait_for_press()
-        print("Starting CV loop after button press.")
 
     sender = None
     if args.serial_port:
@@ -240,7 +237,7 @@ def main() -> None:
         if oled_display is not None:
             oled_display.render_count(total)
 
-    try:
+    def run_cv_once() -> None:
         run_webcam_loop(
             pipeline,
             camera_index=args.camera_index,
@@ -256,6 +253,17 @@ def main() -> None:
             camera_autofocus=not args.no_camera_autofocus,
             camera_lens_position=args.camera_lens_position,
         )
+
+    try:
+        if args.button_controlled:
+            while True:
+                print("Waiting for button press to start...")
+                button.wait_for_press()
+                print("Starting CV loop after button press.")
+                run_cv_once()
+                print("CV loop exited. Press the button to run again, or Ctrl+C to quit.")
+        else:
+            run_cv_once()
     finally:
         if sender is not None:
             sender.close()

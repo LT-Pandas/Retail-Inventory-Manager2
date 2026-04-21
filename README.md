@@ -226,7 +226,8 @@ python run_cv.py --button-controlled --button-gpio-pin 17
 ```
 
 Behavior:
-- **Button press**: starts the CV loop.
+- **Button press**: starts the CV loop (same end effect as pressing the triangle run button).
+- After you quit a run (`q`), the script stays alive and waits for the next button press, so the hardware button can launch it again without re-clicking the triangle button.
 
 ---
 
