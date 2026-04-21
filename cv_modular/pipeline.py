@@ -40,6 +40,13 @@ def run_webcam_loop(
     fallback_camera_indexes: list[int] | None = None,
     window_name: str = "Modular CV",
     on_output: Callable[[PipelineOutput], None] | None = None,
+    camera_width: int = 1280,
+    camera_height: int = 720,
+    camera_fps: int = 30,
+    camera_brightness: float = 0.08,
+    camera_contrast: float = 1.2,
+    camera_saturation: float = 1.15,
+    camera_sharpness: float = 1.35,
 ) -> None:
     candidate_indexes: list[int] = [camera_index]
     if fallback_camera_indexes:
@@ -53,8 +60,22 @@ def run_webcam_loop(
         candidate = None
         try:
             candidate = Picamera2(camera_num=index)
-            config = candidate.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)})
+            config = candidate.create_preview_configuration(
+                main={"format": "RGB888", "size": (camera_width, camera_height)}
+            )
             candidate.configure(config)
+            frame_duration_us = int(1_000_000 / max(1, camera_fps))
+            candidate.set_controls(
+                {
+                    "FrameDurationLimits": (frame_duration_us, frame_duration_us),
+                    "AeEnable": True,
+                    "AwbEnable": True,
+                    "Brightness": camera_brightness,
+                    "Contrast": camera_contrast,
+                    "Saturation": camera_saturation,
+                    "Sharpness": camera_sharpness,
+                }
+            )
             candidate.start()
             candidate.capture_array()
             picam2 = candidate

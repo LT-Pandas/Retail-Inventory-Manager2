@@ -67,6 +67,23 @@ python run_cv.py
 python run_cv.py --camera-index 1
 ```
 
+### Improve camera image quality (resolution + tuning)
+
+The default camera profile is tuned for a clearer feed (`1280x720 @ 30 FPS`) with mild brightness/contrast/saturation/sharpness boosts.
+
+```bash
+python run_cv.py \
+  --camera-width 1280 \
+  --camera-height 720 \
+  --camera-fps 30 \
+  --camera-brightness 0.08 \
+  --camera-contrast 1.2 \
+  --camera-saturation 1.15 \
+  --camera-sharpness 1.35
+```
+
+If the image looks oversharpened or noisy in your lighting, reduce `--camera-sharpness` first.
+
 ### Tune hand detector compatibility options
 
 ```bash
