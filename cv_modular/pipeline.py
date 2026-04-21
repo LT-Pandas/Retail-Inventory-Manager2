@@ -40,13 +40,15 @@ def run_webcam_loop(
     fallback_camera_indexes: list[int] | None = None,
     window_name: str = "Modular CV",
     on_output: Callable[[PipelineOutput], None] | None = None,
-    camera_width: int = 1280,
-    camera_height: int = 720,
+    camera_width: int = 1920,
+    camera_height: int = 1080,
     camera_fps: int = 30,
     camera_brightness: float = 0.08,
     camera_contrast: float = 1.2,
     camera_saturation: float = 1.15,
-    camera_sharpness: float = 1.35,
+    camera_sharpness: float = 1.0,
+    camera_autofocus: bool = True,
+    camera_lens_position: float | None = None,
 ) -> None:
     candidate_indexes: list[int] = [camera_index]
     if fallback_camera_indexes:
@@ -70,12 +72,23 @@ def run_webcam_loop(
                     "FrameDurationLimits": (frame_duration_us, frame_duration_us),
                     "AeEnable": True,
                     "AwbEnable": True,
-                    "Brightness": camera_brightness,
-                    "Contrast": camera_contrast,
-                    "Saturation": camera_saturation,
-                    "Sharpness": camera_sharpness,
                 }
             )
+            optional_controls = {
+                "Brightness": camera_brightness,
+                "Contrast": camera_contrast,
+                "Saturation": camera_saturation,
+                "Sharpness": camera_sharpness,
+                "AfMode": 2 if camera_autofocus else 0,  # Continuous autofocus or manual focus mode.
+            }
+            if camera_lens_position is not None and not camera_autofocus:
+                optional_controls["LensPosition"] = camera_lens_position
+
+            for control_name, control_value in optional_controls.items():
+                try:
+                    candidate.set_controls({control_name: control_value})
+                except Exception:
+                    pass
             candidate.start()
             candidate.capture_array()
             picam2 = candidate
