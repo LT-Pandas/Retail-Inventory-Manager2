@@ -111,7 +111,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--oled-driver",
         choices=["auto", "sh1107", "ssd1309", "ssd1327"],
         default="auto",
-        help="OLED driver to use. Default auto tries sh1107, ssd1309, then ssd1327.",
+        help="OLED driver to use. Default auto tries ssd1309, sh1107, then ssd1327.",
     )
     parser.add_argument("--oled-spi-port", type=int, default=0, help="OLED SPI port index.")
     parser.add_argument("--oled-spi-device", type=int, default=0, help="OLED SPI chip-select device index.")
