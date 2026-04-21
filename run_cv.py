@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 
 from cv_modular import CVPipeline, run_webcam_loop
 from cv_modular.finger_serial import FingerSerialSender, FingerSerialSenderConfig
