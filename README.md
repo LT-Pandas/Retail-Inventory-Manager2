@@ -160,7 +160,7 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Run with OLED enabled (auto driver fallback: `sh1107` -> `ssd1309` -> `ssd1327`):
+Run with OLED enabled (auto driver fallback: `ssd1309` -> `sh1107` -> `ssd1327`):
 
 ```bash
 python run_cv.py --oled-enabled

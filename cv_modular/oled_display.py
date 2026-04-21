@@ -17,7 +17,7 @@ class OledDisplayConfig:
 class OledCountDisplay:
     """Render the current count as a single number on an SPI OLED display."""
 
-    _AUTO_DRIVERS = ["sh1107", "ssd1309", "ssd1327"]
+    _AUTO_DRIVERS = ["ssd1309", "sh1107", "ssd1327"]
 
     def __init__(self, config: OledDisplayConfig | None = None) -> None:
         self.config = config or OledDisplayConfig()
