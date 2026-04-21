@@ -135,7 +135,7 @@ By default, detections are filtered to box/package-like labels (`box`, `package`
 
 ## OLED output on Raspberry Pi (SPI)
 
-You can mirror the live count to an SPI OLED (for example SH1107 / SSD1309 / SSD1327 via `luma.oled`).
+You can mirror the live finger count to an SPI OLED (for example SH1107 / SSD1309 / SSD1327 via `luma.oled`).
 
 Install dependencies:
 
@@ -163,16 +163,6 @@ python run_cv.py --oled-enabled --oled-driver ssd1309
 python run_cv.py --oled-enabled --oled-driver ssd1327
 ```
 
-Control what number is sent to OLED:
-
-```bash
-# Finger count (default CV mode)
-python run_cv.py --oled-enabled --oled-count-mode fingers
-
-# People count (with Roboflow people detector enabled)
-python run_cv.py --oled-enabled --count-people --oled-count-mode people
-```
-
 SPI/GPIO pins are configurable if your wiring differs:
 
 ```bash
@@ -180,37 +170,6 @@ python run_cv.py --oled-enabled --oled-spi-port 0 --oled-spi-device 0 --oled-gpi
 ```
 
 The OLED output is a single number that updates only when the count changes.
-
----
-## Roboflow people counting (stereo-camera ready)
-
-This project now supports counting people with Roboflow model `crowd-counting-dataset-w3o7w/2`.
-
-1. Export your key:
-
-```bash
-export ROBOFLOW_API_KEY=your_key_here
-```
-
-2. Run people counting:
-
-```bash
-python run_cv.py --count-people
-```
-
-For side-by-side stereo streams, choose layout + eye:
-
-```bash
-python run_cv.py --count-people --stereo-layout left-right --stereo-eye left
-```
-
-Useful knobs:
-
-- `--roboflow-model-id` (defaults to `crowd-counting-dataset-w3o7w/2`)
-- `--people-confidence-threshold` (defaults to `0.35`)
-- `--roboflow-api-key` (optional override for `ROBOFLOW_API_KEY`)
-
-The OpenCV overlay will display both person boxes and a `People: N` counter.
 
 ---
 
