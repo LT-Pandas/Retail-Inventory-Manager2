@@ -50,6 +50,7 @@ def run_webcam_loop(
     camera_autofocus: bool = True,
     camera_lens_position: float | None = None,
     should_stop: Callable[[], bool] | None = None,
+    on_key: Callable[[int], bool] | None = None,
 ) -> None:
     candidate_indexes: list[int] = [camera_index]
     if fallback_camera_indexes:
@@ -128,6 +129,9 @@ def run_webcam_loop(
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
+            if on_key is not None and key != 255:
+                if on_key(key):
+                    break
     finally:
         picam2.stop()
         pipeline.close()
