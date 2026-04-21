@@ -208,7 +208,7 @@ The OLED output is a single number that updates only when the count changes.
 
 ## Start/stop with a physical button (GPIO 17 + GND pin 14)
 
-You can run the app in button-controlled mode so it only starts after a button press and exits on the next press.
+You can run the app in button-controlled mode so it only starts after a button press (equivalent to pressing the triangle run button).
 
 Wiring:
 - One button leg -> **BCM GPIO 17** (physical pin 11)
