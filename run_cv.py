@@ -66,6 +66,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=2500,
         help="Minimum contour area for a candidate box.",
     )
+    parser.add_argument("--camera-width", type=int, default=1280, help="Camera capture width in pixels.")
+    parser.add_argument("--camera-height", type=int, default=720, help="Camera capture height in pixels.")
+    parser.add_argument("--camera-fps", type=int, default=30, help="Target camera FPS.")
+    parser.add_argument(
+        "--camera-brightness",
+        type=float,
+        default=0.08,
+        help="Camera brightness control; small positive values can lift shadows.",
+    )
+    parser.add_argument("--camera-contrast", type=float, default=1.2, help="Camera contrast control.")
+    parser.add_argument("--camera-saturation", type=float, default=1.15, help="Camera saturation control.")
+    parser.add_argument("--camera-sharpness", type=float, default=1.35, help="Camera sharpness control.")
     parser.add_argument(
         "--serial-port",
         type=str,
@@ -160,6 +172,13 @@ def main() -> None:
             camera_index=args.camera_index,
             fallback_camera_indexes=args.fallback_camera_indexes,
             on_output=on_output,
+            camera_width=args.camera_width,
+            camera_height=args.camera_height,
+            camera_fps=args.camera_fps,
+            camera_brightness=args.camera_brightness,
+            camera_contrast=args.camera_contrast,
+            camera_saturation=args.camera_saturation,
+            camera_sharpness=args.camera_sharpness,
         )
     finally:
         if sender is not None:
