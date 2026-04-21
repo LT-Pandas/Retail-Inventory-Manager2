@@ -49,6 +49,7 @@ def run_webcam_loop(
     camera_sharpness: float = 1.0,
     camera_autofocus: bool = True,
     camera_lens_position: float | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> None:
     candidate_indexes: list[int] = [camera_index]
     if fallback_camera_indexes:
@@ -109,6 +110,8 @@ def run_webcam_loop(
 
     try:
         while True:
+            if should_stop is not None and should_stop():
+                break
             try:
                 frame = picam2.capture_array()
                 frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
