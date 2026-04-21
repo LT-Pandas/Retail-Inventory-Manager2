@@ -12,8 +12,6 @@ from cv_modular.processors import (
     HandBoxDetectorProcessor,
     ObjectDetectorConfig,
     ObjectDetectorProcessor,
-    PeopleCounterConfig,
-    PeopleCounterProcessor,
 )
 
 
@@ -24,25 +22,6 @@ def _extract_finger_total(results) -> int | None:
         if result.name == "finger_counter":
             return result.data.get("total")
     return None
-
-
-def _extract_people_total(results) -> int | None:
-    for result in results:
-        if result.name == "people_counter":
-            return result.data.get("count")
-    return None
-
-
-def _extract_total(results, mode: str = "auto") -> int | None:
-    if mode == "fingers":
-        return _extract_finger_total(results)
-    if mode == "people":
-        return _extract_people_total(results)
-
-    total = _extract_finger_total(results)
-    if total is None:
-        total = _extract_people_total(results)
-    return total
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -100,44 +79,9 @@ def build_parser() -> argparse.ArgumentParser:
         help="Baud rate for serial finger-count messages.",
     )
     parser.add_argument(
-        "--count-people",
-        action="store_true",
-        help="Enable Roboflow people counting using crowd-counting-dataset-w3o7w/2.",
-    )
-    parser.add_argument(
-        "--roboflow-model-id",
-        type=str,
-        default="crowd-counting-dataset-w3o7w/2",
-        help="Roboflow model identifier to use for people counting.",
-    )
-    parser.add_argument(
-        "--roboflow-api-key",
-        type=str,
-        default=None,
-        help="Roboflow API key. If omitted, ROBOFLOW_API_KEY env var is used.",
-    )
-    parser.add_argument(
-        "--people-confidence-threshold",
-        type=float,
-        default=0.35,
-        help="Minimum confidence to count a person detection.",
-    )
-    parser.add_argument(
-        "--stereo-layout",
-        choices=["none", "left-right", "right-left"],
-        default="none",
-        help="Stereo stream layout for side-by-side cameras.",
-    )
-    parser.add_argument(
-        "--stereo-eye",
-        choices=["left", "right"],
-        default="left",
-        help="Which eye to run inference on when --stereo-layout is used.",
-    )
-    parser.add_argument(
         "--oled-enabled",
         action="store_true",
-        help="Enable OLED SPI output for the current count.",
+        help="Enable OLED SPI output for finger count.",
     )
     parser.add_argument(
         "--oled-driver",
@@ -149,12 +93,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--oled-spi-device", type=int, default=0, help="OLED SPI chip-select device index.")
     parser.add_argument("--oled-gpio-dc", type=int, default=25, help="OLED DC GPIO pin.")
     parser.add_argument("--oled-gpio-rst", type=int, default=24, help="OLED reset GPIO pin.")
-    parser.add_argument(
-        "--oled-count-mode",
-        choices=["auto", "fingers", "people"],
-        default="auto",
-        help="Which count to render on OLED: fingers, people, or auto fallback.",
-    )
     return parser
 
 
@@ -177,7 +115,6 @@ def main() -> None:
         )
     ]
 
-
     if (args.detect_objects or args.object_model) and (ObjectDetectorProcessor is None or ObjectDetectorConfig is None):
         raise RuntimeError(
             "Object detection requires MediaPipe, which is not installed. "
@@ -186,25 +123,6 @@ def main() -> None:
 
     if args.detect_objects or args.object_model:
         processors.append(ObjectDetectorProcessor(ObjectDetectorConfig(model_path=args.object_model)))
-
-    if args.count_people and (PeopleCounterProcessor is None or PeopleCounterConfig is None):
-        raise RuntimeError(
-            "People counting requires the Roboflow inference-sdk package. "
-            "Install dependencies from requirements.txt."
-        )
-
-    if args.count_people:
-        processors.append(
-            PeopleCounterProcessor(
-                PeopleCounterConfig(
-                    model_id=args.roboflow_model_id,
-                    api_key=args.roboflow_api_key,
-                    confidence_threshold=args.people_confidence_threshold,
-                    stereo_layout=args.stereo_layout,
-                    stereo_eye=args.stereo_eye,
-                )
-            )
-        )
     pipeline = CVPipeline(processors)
 
     sender = None
@@ -225,7 +143,7 @@ def main() -> None:
         print(f"OLED display enabled using driver: {oled_display.active_driver}")
 
     def on_output(output) -> None:
-        total = _extract_total(output.results, mode=args.oled_count_mode)
+        total = _extract_finger_total(output.results)
         if total is None:
             return
 
