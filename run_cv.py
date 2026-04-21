@@ -104,8 +104,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--oled-enabled",
-        action="store_true",
-        help="Enable OLED SPI output for finger count.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable OLED SPI output for finger count (default: enabled). Use --no-oled-enabled to disable.",
     )
     parser.add_argument(
         "--oled-driver",
