@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import time
 
 from cv_modular import CVPipeline, run_webcam_loop
 from cv_modular.finger_serial import FingerSerialSender, FingerSerialSenderConfig
@@ -116,6 +117,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--oled-spi-device", type=int, default=0, help="OLED SPI chip-select device index.")
     parser.add_argument("--oled-gpio-dc", type=int, default=25, help="OLED DC GPIO pin.")
     parser.add_argument("--oled-gpio-rst", type=int, default=24, help="OLED reset GPIO pin.")
+    parser.add_argument(
+        "--oled-test-message",
+        type=str,
+        default="RPI5 OLED OK",
+        help="Startup test text shown once when OLED is enabled.",
+    )
+    parser.add_argument(
+        "--oled-test-seconds",
+        type=float,
+        default=2.0,
+        help="How long to display the startup OLED test text.",
+    )
     return parser
 
 
@@ -164,6 +177,11 @@ def main() -> None:
             )
         )
         print(f"OLED display enabled using driver: {oled_display.active_driver}")
+        if args.oled_test_message:
+            oled_display.render_message(args.oled_test_message)
+            print(f"OLED test message: {args.oled_test_message!r}")
+            if args.oled_test_seconds > 0:
+                time.sleep(args.oled_test_seconds)
 
     def on_output(output) -> None:
         total = _extract_finger_total(output.results)

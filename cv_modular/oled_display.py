@@ -69,6 +69,11 @@ class OledCountDisplay:
 
         self._last_count: int | None = None
 
+    def render_message(self, message: str, position: tuple[int, int] = (0, 0)) -> None:
+        with self._canvas(self._device) as draw:
+            draw.rectangle(self._device.bounding_box, outline=0, fill=0)
+            draw.text(position, message, fill=255)
+
     def render_count(self, count: int) -> None:
         if count == self._last_count:
             return

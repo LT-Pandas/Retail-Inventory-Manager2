@@ -166,6 +166,8 @@ Run with OLED enabled (auto driver fallback: `sh1107` -> `ssd1309` -> `ssd1327`)
 python run_cv.py --oled-enabled
 ```
 
+On startup, a test message is now shown for 2 seconds by default (`RPI5 OLED OK`) so you can quickly confirm the display wiring before finger counts begin.
+
 Choose a specific driver:
 
 ```bash
@@ -178,6 +180,14 @@ If your display only works with another controller:
 python run_cv.py --oled-enabled --oled-driver ssd1309
 # or
 python run_cv.py --oled-enabled --oled-driver ssd1327
+```
+
+Customize or disable the startup test message:
+
+```bash
+python run_cv.py --oled-enabled --oled-test-message "OLED TEST OK" --oled-test-seconds 3
+# disable startup message
+python run_cv.py --oled-enabled --oled-test-message ""
 ```
 
 SPI/GPIO pins are configurable if your wiring differs:
