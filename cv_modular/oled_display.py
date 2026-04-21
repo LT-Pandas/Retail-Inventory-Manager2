@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -34,6 +35,7 @@ class OledCountDisplay:
 
         self._canvas = canvas
         self._device = None
+        self._font = None
         serial = spi(
             port=self.config.spi_port,
             device=self.config.spi_device,
@@ -67,12 +69,34 @@ class OledCountDisplay:
                 f"{', '.join(drivers_to_try)}. Errors: {joined_errors}"
             )
 
+        self._font = self._load_best_font()
         self._last_count: int | None = None
 
     def render_message(self, message: str, position: tuple[int, int] = (0, 0)) -> None:
         with self._canvas(self._device) as draw:
             draw.rectangle(self._device.bounding_box, outline=0, fill=0)
             draw.text(position, message, fill=255)
+
+    def _load_best_font(self):
+        try:
+            from PIL import ImageFont
+        except Exception:
+            return None
+
+        display_height = self._device.height
+        target_size = max(16, int(display_height * 0.8))
+
+        font_candidates = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+        ]
+        for font_path in font_candidates:
+            if Path(font_path).exists():
+                try:
+                    return ImageFont.truetype(font_path, target_size)
+                except Exception:
+                    continue
+        return ImageFont.load_default()
 
     def render_count(self, count: int) -> None:
         if count == self._last_count:
@@ -83,7 +107,17 @@ class OledCountDisplay:
 
         with self._canvas(self._device) as draw:
             draw.rectangle(self._device.bounding_box, outline=0, fill=0)
-            draw.text((8, 8), text, fill=255)
+            if self._font is not None:
+                left, top, right, bottom = draw.textbbox((0, 0), text, font=self._font)
+            else:
+                left, top, right, bottom = draw.textbbox((0, 0), text)
+
+            text_width = right - left
+            text_height = bottom - top
+
+            x = max(0, (self._device.width - text_width) // 2 - left)
+            y = max(0, (self._device.height - text_height) // 2 - top)
+            draw.text((x, y), text, fill=255, font=self._font)
 
     def close(self) -> None:
         if self._device is None:
