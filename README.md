@@ -206,6 +206,32 @@ The OLED output is a single number that updates only when the count changes.
 
 ---
 
+## Start/stop with a physical button (GPIO 17 + GND pin 14)
+
+Button control is enabled by default so the app starts only after a button press and exits on the next press.
+
+Wiring:
+- One button leg -> **BCM GPIO 17** (physical pin 11)
+- Other button leg -> **GND physical pin 14**
+
+Run:
+
+```bash
+python run_cv.py
+```
+
+Behavior:
+- **First press**: starts the CV loop.
+- **Second press**: cleanly stops this Python program (it does **not** shut down the Raspberry Pi).
+
+Disable button control if needed:
+
+```bash
+python run_cv.py --no-button-controlled
+```
+
+---
+
 ## Training a dedicated cardboard-box CV model
 
 A non-destructive training workflow (Roboflow + YOLOv8) is included here:
