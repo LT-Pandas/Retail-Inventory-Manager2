@@ -47,7 +47,9 @@ luma.core>=2.4.2
 - `bluezero` (required only for `--ble-enabled`).
 - `mediapipe` (required only for `--detect-objects` / `--object-model`).
 
----
+## D) Arduino simple LED setup
+Arduino sketch LED pins:
+- D2, D3, D4, D5, D6 (5 LEDs total)
 
 ## 3) Hardware/components used
 
