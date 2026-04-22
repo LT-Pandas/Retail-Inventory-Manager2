@@ -1,276 +1,166 @@
-# Retail-Inventory-Manager
+# Retail Inventory Manager (Raspberry Pi + OpenCV)
 
-This repository includes an **absolute-minimum modular computer vision starter** based on OpenCV so you can:
-
-1. Detect how many fingers are currently held up (webcam, real time).
-2. Keep a clean module layout so object detection and future CV features are easy to plug in.
-3. Detect rectangular boxes at the same time as hands/fingers using a unified processor (no trained box model needed).
-
-The finger-counting processor now uses an OpenCV-only contour/convexity-defect approach so it can run on Raspberry Pi Python 3.13 + Picamera2 setups without MediaPipe.
+This project runs real-time hand/finger counting and box detection on a Raspberry Pi camera feed, with optional outputs to:
+- an SPI OLED display,
+- BLE (nRF Connect).
 
 ---
 
-## Project layout
+## 1) Main code structure (used runtime components)
 
 ```text
 .
+├── run_cv.py                               # Main entrypoint + CLI options
 ├── cv_modular/
-│   ├── interfaces.py                  # shared processor contract
-│   ├── pipeline.py                    # processor orchestration + webcam loop
+│   ├── pipeline.py                         # Picamera2 capture loop + processor pipeline
+│   ├── oled_display.py                     # SPI OLED output (luma.oled)
+│   ├── ble_uint8.py                        # BLE uint8 GATT server (optional)
 │   └── processors/
-│       ├── box_detector.py            # contour-based rectangular box detection plugin
-│       ├── finger_counter.py          # OpenCV-only hand tracking + finger counting plugin
-│       └── object_detector.py         # optional MediaPipe Tasks object detection plugin
-├── run_cv.py                          # one command entrypoint
-└── requirements.txt
+│       ├── hand_box_detector.py            # Combined hand + box processor
+│       ├── finger_counter.py               # Hand tracking + finger counting
+│       ├── box_detector.py                 # Contour-based rectangular box detection
+│       └── object_detector.py              # Optional MediaPipe object detector
+└── docs/
+    └── CARDBOARD_MODEL_TRAINING.md         # Optional model-training workflow docs
 ```
+
+Notes:
+- `run_cv.py` uses `HandBoxDetectorProcessor` by default.
+- `ObjectDetectorProcessor` is optional and only used when `--detect-objects` (or `--object-model`) is passed.
 
 ---
 
-## Quick start (copy/paste)
+## 2) Dependencies
 
-### 1) Create and activate a virtual environment
+### Required (from `requirements.txt`)
+
+```txt
+opencv-python>=4.9.0.80
+numpy>=1.24.0
+luma.oled>=3.13.0
+luma.core>=2.4.2
+```
+
+### Installed separately only if needed
+- `picamera2` (required on Raspberry Pi for camera capture).
+- `gpiozero` (required only for `--button-controlled`).
+- `bluezero` (required only for `--ble-enabled`).
+- `mediapipe` (required only for `--detect-objects` / `--object-model`).
+
+---
+
+## 3) Hardware/components used
+
+- Raspberry Pi (with 40-pin header)
+- Pi camera (used by `picamera2`)
+- SPI OLED module (controller supported: `ssd1309`, `sh1107`, `ssd1327`)
+- Momentary push button (optional start trigger)
+
+---
+
+## 4) Pin mapping and wiring
+
+## A) Raspberry Pi -> OLED (SPI)
+Default runtime pins in this project:
+- `--oled-spi-port 0 --oled-spi-device 0`
+- `--oled-gpio-dc 25`
+- `--oled-gpio-rst 24`
+
+Recommended wiring (Pi 40-pin header):
+
+| OLED signal | Pi BCM | Pi physical pin |
+|---|---:|---:|
+| VCC | 3.3V | 1 (or 17) |
+| GND | GND | 6 (or any GND) |
+| SCLK / CLK | GPIO11 (SPI0 SCLK) | 23 |
+| MOSI / DIN | GPIO10 (SPI0 MOSI) | 19 |
+| CS | GPIO8 (SPI0 CE0) | 24 |
+| DC | GPIO25 | 22 |
+| RST / RES | GPIO24 | 18 |
+
+Driver chip note:
+- Your OLED module’s onboard controller/driver chip should be one of: `ssd1309`, `sh1107`, or `ssd1327`.
+- Default auto-init tries: `ssd1309` -> `sh1107` -> `ssd1327`.
+
+## B) Raspberry Pi button input (optional)
+Project default:
+- `--button-gpio-pin 17` (BCM numbering)
+
+Wiring:
+- Button leg 1 -> **BCM 17** (physical pin **11**)
+- Button leg 2 -> **GND** (for example physical pin **14**)
+
+Important:
+- Do **not** use physical pin 17 for this signal (that pin is 3.3V power).
+
+---
+
+## 5) How to run
+
+## A) Setup
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-```
-
-### 2) Install dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-If you also want optional object detection, install MediaPipe separately (it may not be available on Python 3.13):
+Install optional packages only when needed:
 
 ```bash
-pip install mediapipe
+pip install gpiozero bluezero mediapipe
 ```
 
-### 3) Run finger counting
+(Install only the ones you plan to use.)
 
-```bash
-python run_cv.py
-```
-
-- Press **`q`** to quit.
-- Press **`o`** to send the latest finger count as a **UINT8 BLE notification** (when BLE is enabled).
-- You will see hand contour tracking and a `Fingers: N` overlay in the OpenCV window.
-
----
-
-## Common run options
-
-### Use another camera index
-
-```bash
-python run_cv.py --camera-index 1
-```
-
-### Improve camera image quality (resolution + tuning)
-
-The default camera profile is tuned for a clearer feed (`1280x720 @ 30 FPS`) with mild brightness/contrast/saturation/sharpness boosts.
-
-```bash
-python run_cv.py \
-  --camera-width 1280 \
-  --camera-height 720 \
-  --camera-fps 30 \
-  --camera-brightness 0.08 \
-  --camera-contrast 1.2 \
-  --camera-saturation 1.15 \
-  --camera-sharpness 1.35
-```
-
-If the image looks oversharpened or noisy in your lighting, reduce `--camera-sharpness` first.
-
-### Tune hand detector compatibility options
-
-```bash
-python run_cv.py \
-  --min-detection-confidence 0.7 \
-  --min-presence-confidence 0.6 \
-  --min-tracking-confidence 0.6
-```
-
-### If your video feed is **not mirrored**
-
-```bash
-python run_cv.py --no-assume-selfie-view
-```
-
-### Send live finger count to Arduino over serial (while keeping the webcam view)
-
-```bash
-python run_cv.py --serial-port COM5 --serial-baud 115200
-```
-
-- Linux/macOS port examples: `/dev/ttyUSB0`, `/dev/ttyACM0`, `/dev/tty.usbmodemXXXX`
-- Message format: `FINGERS:<count>\n` (for example `FINGERS:3`)
-- Updates are sent only when the count changes, capped at ~20 Hz.
-
-### Send UINT8 finger count to nRF Connect on phone over Raspberry Pi Bluetooth (BLE)
-
-Install optional BLE dependency on the Pi:
-
-```bash
-pip install bluezero
-```
-
-Run with BLE enabled:
-
-```bash
-python run_cv.py --ble-enabled --ble-adapter-address B8:27:EB:00:00:01
-```
-
-Then in nRF Connect:
-
-1. Scan and connect to `FingerCountPi` (or your `--ble-local-name`).
-2. Find service UUID `12345678-1234-5678-1234-56789abcdef0`.
-3. Enable notifications on characteristic UUID `12345678-1234-5678-1234-56789abcdef1`.
-4. Press **`o`** in the OpenCV window to push the current finger count as a **single UINT8 value**.
-
----
-
-### Hand + box detection now run together
+## B) Standard run (camera + hand/box detection + OLED enabled by default)
 
 ```bash
 python run_cv.py
 ```
 
-Optional box tuning:
+Controls:
+- Press `q` to quit.
+- Press `o` to send current count as BLE notification (when BLE is enabled).
 
-```bash
-python run_cv.py --box-min-area 4000
-```
+## C) Common run modes
 
-The unified processor overlays both OpenCV hand tracking / `Fingers: N` and rectangular box outlines / `Boxes: N` in the same frame.
-
----
-
-## MediaPipe object detection integration (for package/box-like objects)
-
-The architecture supports MediaPipe object detection as a second processor.
-
-Run with the built-in default model (auto-downloaded on first run):
-
-```bash
-python run_cv.py --detect-objects
-```
-
-Use your own model if desired:
-
-```bash
-python run_cv.py --detect-objects --object-model /absolute/path/to/model.tflite
-```
-
-By default, detections are filtered to box/package-like labels (`box`, `package`, `parcel`, `carton`) so the overlay stays focused on inventory-style objects.
-
----
-
-
-
-
-## OLED output on Raspberry Pi (SPI)
-
-You can mirror the live finger count to an SPI OLED (for example SH1107 / SSD1309 / SSD1327 via `luma.oled`).
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-OLED output is enabled by default now, so pressing the play/run button on `run_cv.py` will automatically initialize the display (auto driver fallback: `ssd1309` -> `sh1107` -> `ssd1327`):
-
-```bash
-python run_cv.py
-```
-
-If you ever want to run without OLED output:
-
-```bash
-python run_cv.py --no-oled-enabled
-```
-
-On startup, a test message is now shown for 2 seconds by default (`RPI5 OLED OK`) so you can quickly confirm the display wiring before finger counts begin.
-
-Choose a specific driver:
-
-```bash
-python run_cv.py --oled-enabled --oled-driver sh1107
-```
-
-If your display only works with another controller:
-
-```bash
-python run_cv.py --oled-enabled --oled-driver ssd1309
-# or
-python run_cv.py --oled-enabled --oled-driver ssd1327
-```
-
-Customize or disable the startup test message:
-
-```bash
-python run_cv.py --oled-enabled --oled-test-message "OLED TEST OK" --oled-test-seconds 3
-# disable startup message
-python run_cv.py --oled-enabled --oled-test-message ""
-```
-
-SPI/GPIO pins are configurable if your wiring differs:
-
-```bash
-python run_cv.py --oled-enabled --oled-spi-port 0 --oled-spi-device 0 --oled-gpio-dc 25 --oled-gpio-rst 24
-```
-
-The OLED output is a single number that updates only when the count changes.
-
----
-
-## Start with a physical button (BCM GPIO 17 + GND)
-
-You can run the app in button-controlled mode so it only starts after a button press (equivalent to pressing the triangle run button).
-
-⚠️ Use **BCM numbering**, not physical pin numbers.
-- `--button-gpio-pin 17` means **BCM GPIO 17 = physical pin 11**.
-- **Do not use physical pin 17** for this signal; physical pin 17 is **3.3V power**, not GPIO.
-
-Wiring:
-- One button leg -> **BCM GPIO 17** (**physical pin 11**)
-- Other button leg -> **any GND pin** (for example physical pin 14)
-- No external pull-up resistor is required (the code uses `pull_up=True`).
-
-Run:
+Button-controlled startup:
 
 ```bash
 python run_cv.py --button-controlled --button-gpio-pin 17
 ```
 
-Behavior:
-- **Button press**: starts the CV loop (same end effect as pressing the triangle run button).
-- After you quit a run (`q`), the script stays alive and waits for the next button press, so the hardware button can launch it again without re-clicking the triangle button.
+Disable OLED output:
+
+```bash
+python run_cv.py --no-oled-enabled
+```
+
+Enable BLE uint8 server:
+
+```bash
+python run_cv.py --ble-enabled --ble-adapter-address B8:27:EB:00:00:01
+```
+
+Enable optional MediaPipe object detection:
+
+```bash
+python run_cv.py --detect-objects
+```
 
 ---
 
-## Training a dedicated cardboard-box CV model
-
-A non-destructive training workflow (Roboflow + YOLOv8) is included here:
-
-- `docs/CARDBOARD_MODEL_TRAINING.md`
-- `training/cardboard_box_training.py`
-- `requirements-training.txt`
-
-Follow the guide for copy/paste installs, dataset download options, and training commands.
+## 6) Runtime outputs (what updates where)
+- OpenCV window overlay:
+  - Finger count (`Fingers: N`)
+  - Box count (`Boxes: N`)
+- OLED: shows the latest finger count as a single large number.
+- BLE: exposes current count as uint8 characteristic; notify using key `o`.
 
 ---
 
-## How to extend this modular setup
-
-Add new processors under `cv_modular/processors/` that implement:
-- `process(frame) -> ProcessorResult`
-- `close()`
-
-Then register the new processor in `run_cv.py`.
-
-That is all you need to keep scaling from finger counting to more CV capabilities (gestures, object detection, tracking, measurements, etc.).
+## 7) Quick troubleshooting
+- Camera fails to open: try `--camera-index 0 --fallback-camera-indexes 1`.
+- OLED init fails: try explicit `--oled-driver sh1107` (or `ssd1309` / `ssd1327`).
+- Button not responding: verify BCM numbering and physical wiring (GPIO17 is physical pin 11).

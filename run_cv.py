@@ -5,7 +5,6 @@ import time
 
 from cv_modular import CVPipeline, run_webcam_loop
 from cv_modular.ble_uint8 import BleUint8Server, BleUint8ServerConfig
-from cv_modular.finger_serial import FingerSerialSender, FingerSerialSenderConfig
 from cv_modular.oled_display import OledCountDisplay, OledDisplayConfig
 from cv_modular.processors import (
     BoxDetectorConfig,
@@ -90,18 +89,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=None,
         help="Optional manual lens position (requires --no-camera-autofocus and supported camera hardware).",
-    )
-    parser.add_argument(
-        "--serial-port",
-        type=str,
-        default=None,
-        help="Optional serial port for Arduino output (e.g. COM5 or /dev/ttyUSB0).",
-    )
-    parser.add_argument(
-        "--serial-baud",
-        type=int,
-        default=115200,
-        help="Baud rate for serial finger-count messages.",
     )
     parser.add_argument(
         "--ble-enabled",
@@ -234,10 +221,6 @@ def main() -> None:
             "Press once to start (equivalent to pressing the triangle run button)."
         )
 
-    sender = None
-    if args.serial_port:
-        sender = FingerSerialSender(FingerSerialSenderConfig(port=args.serial_port, baud=args.serial_baud))
-
     ble_server = None
     last_total: int | None = None
     if args.ble_enabled:
@@ -276,10 +259,6 @@ def main() -> None:
         if total is None:
             return
         last_total = total
-
-        if sender is not None:
-            print("Sending count:", total)
-            sender.send_finger_count(total)
 
         if oled_display is not None:
             oled_display.render_count(total)
@@ -326,8 +305,6 @@ def main() -> None:
         else:
             run_cv_once()
     finally:
-        if sender is not None:
-            sender.close()
         if ble_server is not None:
             ble_server.close()
         if oled_display is not None:
