@@ -2,7 +2,6 @@
 
 This project runs real-time hand/finger counting and box detection on a Raspberry Pi camera feed, with optional outputs to:
 - an SPI OLED display,
-- an Arduino LED indicator over serial,
 - BLE (nRF Connect).
 
 ---
@@ -14,7 +13,6 @@ This project runs real-time hand/finger counting and box detection on a Raspberr
 ├── run_cv.py                               # Main entrypoint + CLI options
 ├── cv_modular/
 │   ├── pipeline.py                         # Picamera2 capture loop + processor pipeline
-│   ├── finger_serial.py                    # Sends FINGERS:<n> over serial (Arduino)
 │   ├── oled_display.py                     # SPI OLED output (luma.oled)
 │   ├── ble_uint8.py                        # BLE uint8 GATT server (optional)
 │   └── processors/
@@ -22,8 +20,8 @@ This project runs real-time hand/finger counting and box detection on a Raspberr
 │       ├── finger_counter.py               # Hand tracking + finger counting
 │       ├── box_detector.py                 # Contour-based rectangular box detection
 │       └── object_detector.py              # Optional MediaPipe object detector
-└── ArduinoFiveFingerAI.ino/
-    └── ArduinoFiveFingerAI.ino.ino         # Arduino sketch for 5-LED count display
+└── docs/
+    └── CARDBOARD_MODEL_TRAINING.md         # Optional model-training workflow docs
 ```
 
 Notes:
@@ -39,7 +37,6 @@ Notes:
 ```txt
 opencv-python>=4.9.0.80
 numpy>=1.24.0
-pyserial>=3.5
 luma.oled>=3.13.0
 luma.core>=2.4.2
 ```
@@ -50,22 +47,16 @@ luma.core>=2.4.2
 - `bluezero` (required only for `--ble-enabled`).
 - `mediapipe` (required only for `--detect-objects` / `--object-model`).
 
----
+## D) Arduino simple LED setup
+Arduino sketch LED pins:
+- D2, D3, D4, D5, D6 (5 LEDs total)
 
 ## 3) Hardware/components used
 
-### Raspberry Pi side
 - Raspberry Pi (with 40-pin header)
 - Pi camera (used by `picamera2`)
 - SPI OLED module (controller supported: `ssd1309`, `sh1107`, `ssd1327`)
 - Momentary push button (optional start trigger)
-- USB cable to Arduino (for serial LED output), or direct serial adapter if preferred
-
-### Arduino side (optional LED bar)
-- Arduino board
-- 5x LEDs
-- 5x current-limiting resistors (typical 220Ω to 330Ω)
-- Jumper wires + breadboard
 
 ---
 
@@ -103,24 +94,6 @@ Wiring:
 
 Important:
 - Do **not** use physical pin 17 for this signal (that pin is 3.3V power).
-
-## C) Pi -> Arduino serial (optional)
-This project typically uses USB serial:
-- Connect Arduino to Pi via USB.
-- Run with `--serial-port /dev/ttyACM0` (or your actual port).
-- Message format sent by Pi: `FINGERS:<count>\n`.
-
-## D) Arduino simple LED setup
-Arduino sketch LED pins:
-- D2, D3, D4, D5, D6 (5 LEDs total)
-
-Wire each LED channel as:
-- Arduino digital pin -> resistor (220Ω–330Ω) -> LED anode (+)
-- LED cathode (-) -> GND
-
-Behavior:
-- If count is 3, LEDs on D2-D4 turn on; D5-D6 remain off.
-- Count is clamped to range 0-5.
 
 ---
 
@@ -160,12 +133,6 @@ Button-controlled startup:
 python run_cv.py --button-controlled --button-gpio-pin 17
 ```
 
-Send count to Arduino serial:
-
-```bash
-python run_cv.py --serial-port /dev/ttyACM0 --serial-baud 115200
-```
-
 Disable OLED output:
 
 ```bash
@@ -191,7 +158,6 @@ python run_cv.py --detect-objects
   - Finger count (`Fingers: N`)
   - Box count (`Boxes: N`)
 - OLED: shows the latest finger count as a single large number.
-- Serial: sends `FINGERS:<n>` only when value changes (rate-limited).
 - BLE: exposes current count as uint8 characteristic; notify using key `o`.
 
 ---
@@ -200,4 +166,3 @@ python run_cv.py --detect-objects
 - Camera fails to open: try `--camera-index 0 --fallback-camera-indexes 1`.
 - OLED init fails: try explicit `--oled-driver sh1107` (or `ssd1309` / `ssd1327`).
 - Button not responding: verify BCM numbering and physical wiring (GPIO17 is physical pin 11).
-- Serial not updating LEDs: confirm baud is `115200` and incoming text is `FINGERS:<n>`.
