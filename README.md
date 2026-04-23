@@ -158,6 +158,12 @@ Constrain object shape if needed:
 python run_cv.py --object-min-aspect-ratio 0.6 --object-max-aspect-ratio 1.8
 ```
 
+Reduce shadow false positives and improve FPS:
+
+```bash
+python run_cv.py --object-processing-scale 0.45 --shadow-min-saturation 35 --shadow-min-value 65
+```
+
 ---
 
 ## 6) Runtime outputs (what updates where)

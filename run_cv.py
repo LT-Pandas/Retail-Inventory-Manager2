@@ -44,14 +44,32 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--object-min-aspect-ratio",
         type=float,
-        default=0.5,
+        default=0.1,
         help="Minimum bounding box aspect ratio for contour-based object detection.",
     )
     parser.add_argument(
         "--object-max-aspect-ratio",
         type=float,
-        default=2.2,
+        default=10.0,
         help="Maximum bounding box aspect ratio for contour-based object detection.",
+    )
+    parser.add_argument(
+        "--object-processing-scale",
+        type=float,
+        default=0.5,
+        help="Scale used for contour detection work (0.2-1.0). Lower values improve FPS.",
+    )
+    parser.add_argument(
+        "--shadow-min-saturation",
+        type=int,
+        default=28,
+        help="Minimum HSV saturation for dark-region edge acceptance (higher rejects more shadows).",
+    )
+    parser.add_argument(
+        "--shadow-min-value",
+        type=int,
+        default=55,
+        help="Minimum HSV value for dark-region edge acceptance (higher rejects more shadows).",
     )
     parser.add_argument("--camera-width", type=int, default=1920, help="Camera capture width in pixels.")
     parser.add_argument("--camera-height", type=int, default=1080, help="Camera capture height in pixels.")
@@ -178,6 +196,9 @@ def main() -> None:
                 epsilon_ratio=args.object_epsilon_ratio,
                 min_aspect_ratio=args.object_min_aspect_ratio,
                 max_aspect_ratio=args.object_max_aspect_ratio,
+                processing_scale=args.object_processing_scale,
+                shadow_min_saturation=args.shadow_min_saturation,
+                shadow_min_value=args.shadow_min_value,
             )
         )
     ]

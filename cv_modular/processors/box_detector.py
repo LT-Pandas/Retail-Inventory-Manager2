@@ -10,20 +10,24 @@ from ..interfaces import ProcessorResult
 
 @dataclass
 class BoxDetectorConfig:
-    """Configuration for geometric box detection using contours."""
+    """Configuration for contour-based objectness detection."""
 
     min_area: int = 2500
     epsilon_ratio: float = 0.04
-    min_aspect_ratio: float = 0.5
-    max_aspect_ratio: float = 2.2
+    min_aspect_ratio: float = 0.1
+    max_aspect_ratio: float = 10.0
+    min_fill_ratio: float = 0.08
+    processing_scale: float = 0.5
+    shadow_min_saturation: int = 28
+    shadow_min_value: int = 55
     draw_color: tuple[int, int, int] = (0, 255, 0)
 
 
 class BoxDetectorProcessor:
-    """Detect cardboard-like rectangular boxes using contour approximation.
+    """Detect unknown objects by finding strong edge-bounded contours.
 
-    This model-free detector is useful when you only need to identify box shapes
-    and do not have a trained object-detection model available.
+    This detector intentionally does not classify object type. It only identifies
+    likely object regions and reports them as generic objects.
     """
 
     name = "box_detector"
@@ -32,25 +36,44 @@ class BoxDetectorProcessor:
         self.config = config or BoxDetectorConfig()
 
     def process(self, frame: np.ndarray) -> ProcessorResult:
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        scale = float(np.clip(self.config.processing_scale, 0.2, 1.0))
+        if scale < 0.999:
+            working = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        else:
+            working = frame
+
+        gray = cv2.cvtColor(working, cv2.COLOR_BGR2GRAY)
+        hsv = cv2.cvtColor(working, cv2.COLOR_BGR2HSV)
+        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
         edges = cv2.Canny(blurred, 60, 180)
+
+        saturation_mask = cv2.inRange(
+            hsv,
+            (0, self.config.shadow_min_saturation, self.config.shadow_min_value),
+            (180, 255, 255),
+        )
+        bright_mask = cv2.inRange(hsv[:, :, 2], self.config.shadow_min_value + 20, 255)
+        non_shadow_mask = cv2.bitwise_or(saturation_mask, bright_mask)
+        edges = cv2.bitwise_and(edges, non_shadow_mask)
+
         edges = cv2.dilate(edges, np.ones((3, 3), dtype=np.uint8), iterations=1)
+        edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((3, 3), dtype=np.uint8), iterations=1)
 
         contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-        boxes: list[dict[str, float | int]] = []
+        boxes: list[dict[str, float | int | str]] = []
+
         for contour in contours:
             area = cv2.contourArea(contour)
             if area < self.config.min_area:
                 continue
 
             perimeter = cv2.arcLength(contour, True)
-            approximation = cv2.approxPolyDP(contour, self.config.epsilon_ratio * perimeter, True)
-            if len(approximation) != 4:
+            if perimeter <= 0:
                 continue
+            approximation = cv2.approxPolyDP(contour, self.config.epsilon_ratio * perimeter, True)
 
-            x, y, width, height = cv2.boundingRect(approximation)
+            x, y, width, height = cv2.boundingRect(contour)
             if height == 0:
                 continue
 
@@ -58,8 +81,19 @@ class BoxDetectorProcessor:
             if not self.config.min_aspect_ratio <= aspect_ratio <= self.config.max_aspect_ratio:
                 continue
 
+            fill_ratio = area / float(max(1, width * height))
+            if fill_ratio < self.config.min_fill_ratio:
+                continue
+
+            if scale < 0.999:
+                approximation = (approximation / scale).astype(np.int32)
+                x = int(x / scale)
+                y = int(y / scale)
+                width = int(width / scale)
+                height = int(height / scale)
+
             cv2.drawContours(frame, [approximation], -1, self.config.draw_color, 2)
-            label = f"Box {len(boxes) + 1}"
+            label = f"Object {len(boxes) + 1}"
             cv2.putText(
                 frame,
                 label,
@@ -72,18 +106,20 @@ class BoxDetectorProcessor:
 
             boxes.append(
                 {
+                    "label": "object",
                     "x": x,
                     "y": y,
                     "width": width,
                     "height": height,
-                    "area": float(area),
+                    "area": float(area / (scale * scale)),
                     "aspect_ratio": round(aspect_ratio, 3),
+                    "fill_ratio": round(fill_ratio, 3),
                 }
             )
 
         cv2.putText(
             frame,
-            f"Boxes: {len(boxes)}",
+            f"Objects: {len(boxes)}",
             (12, 72),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.8,
