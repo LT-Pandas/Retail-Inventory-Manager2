@@ -7,26 +7,20 @@ from cv_modular import CVPipeline, run_webcam_loop
 from cv_modular.ble_uint8 import BleUint8Server, BleUint8ServerConfig
 from cv_modular.oled_display import OledCountDisplay, OledDisplayConfig
 from cv_modular.processors import (
-    BoxDetectorConfig,
-    FingerCounterConfig,
-    HandBoxDetectorConfig,
-    HandBoxDetectorProcessor,
     ObjectDetectorConfig,
     ObjectDetectorProcessor,
 )
 
 
-def _extract_finger_total(results) -> int | None:
+def _extract_object_total(results) -> int | None:
     for result in results:
-        if result.name == "hand_box_detector":
-            return result.data.get("hands", {}).get("total")
-        if result.name == "finger_counter":
-            return result.data.get("total")
+        if result.name == "object_detector":
+            return result.data.get("count")
     return None
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Modular OpenCV CV demo")
+    parser = argparse.ArgumentParser(description="Object detection CV demo")
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument(
         "--fallback-camera-indexes",
@@ -35,25 +29,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=[1],
         help="Additional camera indexes; first unique value is stitched with --camera-index (default: 1).",
     )
-    parser.add_argument("--max-num-hands", type=int, default=1)
-    parser.add_argument("--min-detection-confidence", type=float, default=0.6)
-    parser.add_argument("--min-tracking-confidence", type=float, default=0.5)
-    parser.add_argument("--min-presence-confidence", type=float, default=0.5)
-    parser.add_argument(
-        "--hand-model",
-        type=str,
-        default=None,
-        help="Deprecated: kept for backward compatibility; OpenCV hand tracking ignores this.",
-    )
-    parser.add_argument(
-        "--no-assume-selfie-view",
-        action="store_true",
-        help="Use this when the incoming image is not mirrored.",
-    )
     parser.add_argument(
         "--detect-objects",
-        action="store_true",
-        help="Enable optional MediaPipe object detection (auto-downloads default model).",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable MediaPipe object detection (auto-downloads default model).",
     )
     parser.add_argument(
         "--object-model",
@@ -62,10 +42,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional path to an object detection .tflite model. If omitted, a default model is downloaded.",
     )
     parser.add_argument(
-        "--box-min-area",
+        "--object-model-variant",
+        choices=["efficientdet_lite0", "efficientdet_lite2"],
+        default="efficientdet_lite0",
+        help=(
+            "Built-in MediaPipe model variant used when --object-model is not provided. "
+            "lite2 is typically more accurate but slower than lite0."
+        ),
+    )
+    parser.add_argument(
+        "--object-max-results",
         type=int,
-        default=2500,
-        help="Minimum contour area for a candidate box.",
+        default=5,
+        help="Maximum number of object detections to return per frame.",
+    )
+    parser.add_argument(
+        "--object-score-threshold",
+        type=float,
+        default=0.25,
+        help="Minimum confidence score for object detections.",
+    )
+    parser.add_argument(
+        "--object-label-filter",
+        nargs="*",
+        default=None,
+        help=(
+            "Optional list of substrings to keep (example: --object-label-filter box carton). "
+            "If omitted, all labels are kept."
+        ),
     )
     parser.add_argument("--camera-width", type=int, default=1920, help="Camera capture width in pixels.")
     parser.add_argument("--camera-height", type=int, default=1080, help="Camera capture height in pixels.")
@@ -112,19 +116,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--ble-service-uuid",
         type=str,
         default="12345678-1234-5678-1234-56789abcdef0",
-        help="BLE service UUID for finger count.",
+        help="BLE service UUID for object count.",
     )
     parser.add_argument(
         "--ble-characteristic-uuid",
         type=str,
         default="12345678-1234-5678-1234-56789abcdef1",
-        help="BLE characteristic UUID for uint8 finger count.",
+        help="BLE characteristic UUID for uint8 object count.",
     )
     parser.add_argument(
         "--oled-enabled",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Enable OLED SPI output for finger count (default: enabled). Use --no-oled-enabled to disable.",
+        help="Enable OLED SPI output for object count (default: enabled). Use --no-oled-enabled to disable.",
     )
     parser.add_argument(
         "--oled-driver",
@@ -176,21 +180,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
 
-    processors = [
-        HandBoxDetectorProcessor(
-            HandBoxDetectorConfig(
-                hand=FingerCounterConfig(
-                    max_num_hands=args.max_num_hands,
-                    min_detection_confidence=args.min_detection_confidence,
-                    min_tracking_confidence=args.min_tracking_confidence,
-                    min_presence_confidence=args.min_presence_confidence,
-                    assume_selfie_view=not args.no_assume_selfie_view,
-                    model_path=args.hand_model,
-                ),
-                box=BoxDetectorConfig(min_area=args.box_min_area),
-            )
-        )
-    ]
+    processors = []
 
     if (args.detect_objects or args.object_model) and (ObjectDetectorProcessor is None or ObjectDetectorConfig is None):
         raise RuntimeError(
@@ -199,7 +189,20 @@ def main() -> None:
         )
 
     if args.detect_objects or args.object_model:
-        processors.append(ObjectDetectorProcessor(ObjectDetectorConfig(model_path=args.object_model)))
+        label_filter = tuple(label.lower() for label in args.object_label_filter) if args.object_label_filter else None
+        processors.append(
+            ObjectDetectorProcessor(
+                ObjectDetectorConfig(
+                    model_path=args.object_model,
+                    model_variant=args.object_model_variant,
+                    max_results=args.object_max_results,
+                    score_threshold=args.object_score_threshold,
+                    label_filter=label_filter,
+                )
+            )
+        )
+    if not processors:
+        raise RuntimeError("No processors configured. Enable --detect-objects or provide --object-model.")
     pipeline = CVPipeline(processors)
 
     button = None
@@ -255,7 +258,7 @@ def main() -> None:
 
     def on_output(output) -> None:
         nonlocal last_total
-        total = _extract_finger_total(output.results)
+        total = _extract_object_total(output.results)
         if total is None:
             return
         last_total = total
@@ -269,7 +272,7 @@ def main() -> None:
     def on_key(key: int) -> bool:
         if key == ord("o") and ble_server is not None:
             if last_total is None:
-                print("No finger count available yet; nothing sent over BLE.")
+                print("No object count available yet; nothing sent over BLE.")
                 return False
             ble_server.set_value(last_total)
             ble_server.notify()
