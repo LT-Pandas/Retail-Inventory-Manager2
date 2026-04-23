@@ -49,6 +49,7 @@ def run_webcam_loop(
     camera_sharpness: float = 1.0,
     camera_autofocus: bool = True,
     camera_lens_position: float | None = None,
+    display_scale: float = 0.6,
     should_stop: Callable[[], bool] | None = None,
     on_key: Callable[[int], bool] | None = None,
 ) -> None:
@@ -151,7 +152,16 @@ def run_webcam_loop(
             output = pipeline.step(stitched_frame)
             if on_output is not None:
                 on_output(output)
-            cv2.imshow(window_name, output.frame)
+            frame_to_show = output.frame
+            if display_scale > 0 and display_scale != 1.0:
+                frame_to_show = cv2.resize(
+                    output.frame,
+                    None,
+                    fx=display_scale,
+                    fy=display_scale,
+                    interpolation=cv2.INTER_AREA,
+                )
+            cv2.imshow(window_name, frame_to_show)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
