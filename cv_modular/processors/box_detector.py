@@ -11,24 +11,33 @@ from ..interfaces import ProcessorResult
 
 @dataclass
 class BoxDetectorConfig:
-    """Configuration for contour-based objectness detection."""
+    """Configuration for stereo-aware objectness detection."""
 
     min_area: int = 2500
     epsilon_ratio: float = 0.04
     min_aspect_ratio: float = 0.1
     max_aspect_ratio: float = 10.0
     min_fill_ratio: float = 0.08
-    processing_scale: float = 0.5
-    shadow_min_saturation: int = 28
-    shadow_min_value: int = 55
+    # Stereo/depth controls.
+    min_disparity: int = 0
+    num_disparities: int = 96
+    block_size: int = 7
+    disparity_foreground_threshold: float = 1.0
+    color_saturation_threshold: int = 35
+    color_value_threshold: int = 35
+    depth_merge_threshold: float = 4.0
+    bbox_gap_merge_px: int = 42
+    mask_alpha: float = 0.28
+    calibration_file: str | None = "stereo_calibration.npz"
     draw_color: tuple[int, int, int] = (0, 255, 0)
 
 
 class BoxDetectorProcessor:
-    """Detect unknown objects by finding strong edge-bounded contours.
+    """Detect unknown objects with stereo depth + color continuity.
 
-    This detector intentionally does not classify object type. It only identifies
-    likely object regions and reports them as generic objects.
+    The processor expects a side-by-side frame (left | right) from two cameras.
+    It creates a depth-informed foreground mask on the left image and merges
+    nearby color blobs when their depth is continuous.
     """
 
     name = "box_detector"
@@ -106,47 +115,125 @@ class BoxDetectorProcessor:
         return rect_left, rect_right
 
     def process(self, frame: np.ndarray) -> ProcessorResult:
-        scale = float(np.clip(self.config.processing_scale, 0.2, 1.0))
-        if scale < 0.999:
-            working = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-        else:
-            working = frame
+        left, right = self._split_stereo_frame(frame)
+        left, right = self._rectify_if_available(left, right)
+        gray_left = cv2.cvtColor(left, cv2.COLOR_BGR2GRAY)
+        gray_right = cv2.cvtColor(right, cv2.COLOR_BGR2GRAY)
 
-        gray = cv2.cvtColor(working, cv2.COLOR_BGR2GRAY)
-        hsv = cv2.cvtColor(working, cv2.COLOR_BGR2HSV)
-        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-        edges = cv2.Canny(blurred, 60, 180)
+        disparity_raw = self.stereo.compute(gray_left, gray_right).astype(np.float32) / 16.0
+        disparity = cv2.medianBlur(disparity_raw, 5)
+        valid_disparity = disparity > self.config.disparity_foreground_threshold
 
-        saturation_mask = cv2.inRange(
-            hsv,
-            (0, self.config.shadow_min_saturation, self.config.shadow_min_value),
-            (180, 255, 255),
+        hsv_left = cv2.cvtColor(left, cv2.COLOR_BGR2HSV)
+        colorful = (
+            (hsv_left[:, :, 1] >= self.config.color_saturation_threshold)
+            & (hsv_left[:, :, 2] >= self.config.color_value_threshold)
         )
-        bright_mask = cv2.inRange(hsv[:, :, 2], self.config.shadow_min_value + 20, 255)
-        non_shadow_mask = cv2.bitwise_or(saturation_mask, bright_mask)
-        edges = cv2.bitwise_and(edges, non_shadow_mask)
 
-        edges = cv2.dilate(edges, np.ones((3, 3), dtype=np.uint8), iterations=1)
-        edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, np.ones((3, 3), dtype=np.uint8), iterations=1)
+        foreground = np.zeros_like(gray_left, dtype=np.uint8)
+        foreground[valid_disparity & colorful] = 255
+        foreground = cv2.morphologyEx(
+            foreground, cv2.MORPH_CLOSE, np.ones((7, 7), dtype=np.uint8), iterations=2
+        )
+        foreground = cv2.morphologyEx(
+            foreground, cv2.MORPH_OPEN, np.ones((5, 5), dtype=np.uint8), iterations=1
+        )
 
         component_count, component_labels, stats, _ = cv2.connectedComponentsWithStats(foreground, connectivity=8)
         candidates: list[dict[str, float | int | np.ndarray]] = []
 
-        boxes: list[dict[str, float | int | str]] = []
+        for component_id in range(1, component_count):
+            x = int(stats[component_id, cv2.CC_STAT_LEFT])
+            y = int(stats[component_id, cv2.CC_STAT_TOP])
+            width = int(stats[component_id, cv2.CC_STAT_WIDTH])
+            height = int(stats[component_id, cv2.CC_STAT_HEIGHT])
+            area = int(stats[component_id, cv2.CC_STAT_AREA])
+            if area < self.config.min_area or height <= 0:
+                continue
+            aspect_ratio = width / float(height)
+            if not self.config.min_aspect_ratio <= aspect_ratio <= self.config.max_aspect_ratio:
+                continue
+            fill_ratio = area / float(max(1, width * height))
+            if fill_ratio < self.config.min_fill_ratio:
+                continue
 
-        for contour in contours:
+            component_mask = component_labels == component_id
+            depth_values = disparity[component_mask]
+            if depth_values.size == 0:
+                continue
+            mean_disparity = float(np.median(depth_values))
+            candidates.append(
+                {
+                    "x": x,
+                    "y": y,
+                    "width": width,
+                    "height": height,
+                    "area": area,
+                    "aspect_ratio": aspect_ratio,
+                    "fill_ratio": fill_ratio,
+                    "mean_disparity": mean_disparity,
+                    "mask": component_mask,
+                }
+            )
+
+        # Merge nearby color blobs when depth is continuous.
+        parent = list(range(len(candidates)))
+
+        def find(idx: int) -> int:
+            while parent[idx] != idx:
+                parent[idx] = parent[parent[idx]]
+                idx = parent[idx]
+            return idx
+
+        def union(a: int, b: int) -> None:
+            root_a, root_b = find(a), find(b)
+            if root_a != root_b:
+                parent[root_b] = root_a
+
+        for i in range(len(candidates)):
+            for j in range(i + 1, len(candidates)):
+                a = candidates[i]
+                b = candidates[j]
+                depth_gap = abs(float(a["mean_disparity"]) - float(b["mean_disparity"]))
+                if depth_gap > self.config.depth_merge_threshold:
+                    continue
+
+                ax1, ay1 = int(a["x"]), int(a["y"])
+                ax2, ay2 = ax1 + int(a["width"]), ay1 + int(a["height"])
+                bx1, by1 = int(b["x"]), int(b["y"])
+                bx2, by2 = bx1 + int(b["width"]), by1 + int(b["height"])
+                horizontal_gap = max(0, max(bx1 - ax2, ax1 - bx2))
+                vertical_gap = max(0, max(by1 - ay2, ay1 - by2))
+                if max(horizontal_gap, vertical_gap) <= self.config.bbox_gap_merge_px:
+                    union(i, j)
+
+        grouped: dict[int, list[dict[str, float | int | np.ndarray]]] = {}
+        for idx, candidate in enumerate(candidates):
+            root = find(idx)
+            grouped.setdefault(root, []).append(candidate)
+
+        boxes: list[dict[str, float | int | str]] = []
+        overlay = left.copy()
+        mask_list: list[np.ndarray] = []
+        for group in grouped.values():
+            merged_mask = np.zeros_like(gray_left, dtype=np.uint8)
+            for item in group:
+                merged_mask[item["mask"]] = 255
+            merged_mask = cv2.morphologyEx(
+                merged_mask, cv2.MORPH_CLOSE, np.ones((7, 7), dtype=np.uint8), iterations=1
+            )
+            contours, _ = cv2.findContours(merged_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                continue
+            contour = max(contours, key=cv2.contourArea)
             area = cv2.contourArea(contour)
             if area < self.config.min_area:
                 continue
             perimeter = cv2.arcLength(contour, True)
-            if perimeter <= 0:
-                continue
             approximation = cv2.approxPolyDP(contour, self.config.epsilon_ratio * perimeter, True)
-
             x, y, width, height = cv2.boundingRect(contour)
-            if height == 0:
+            if height <= 0:
                 continue
-
             aspect_ratio = width / float(height)
             fill_ratio = area / float(max(1, width * height))
             if not self.config.min_aspect_ratio <= aspect_ratio <= self.config.max_aspect_ratio:
@@ -154,18 +241,10 @@ class BoxDetectorProcessor:
             if fill_ratio < self.config.min_fill_ratio:
                 continue
 
-            fill_ratio = area / float(max(1, width * height))
-            if fill_ratio < self.config.min_fill_ratio:
-                continue
-
-            if scale < 0.999:
-                approximation = (approximation / scale).astype(np.int32)
-                x = int(x / scale)
-                y = int(y / scale)
-                width = int(width / scale)
-                height = int(height / scale)
-
-            cv2.drawContours(frame, [approximation], -1, self.config.draw_color, 2)
+            color_layer = np.zeros_like(left, dtype=np.uint8)
+            color_layer[merged_mask > 0] = self.config.draw_color
+            overlay = cv2.addWeighted(overlay, 1.0, color_layer, self.config.mask_alpha, 0)
+            cv2.drawContours(overlay, [approximation], -1, self.config.draw_color, 2)
             label = f"Object {len(boxes) + 1}"
             cv2.putText(
                 overlay,
@@ -184,9 +263,10 @@ class BoxDetectorProcessor:
                     "y": y,
                     "width": width,
                     "height": height,
-                    "area": float(area / (scale * scale)),
+                    "area": float(area),
                     "aspect_ratio": round(aspect_ratio, 3),
                     "fill_ratio": round(fill_ratio, 3),
+                    "mean_disparity": round(mean_disparity, 3),
                 }
             )
             mask_list.append(merged_mask)
