@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         nargs="*",
         default=[1],
-        help="Fallback camera indexes to try if --camera-index fails (default: 1).",
+        help="Additional camera indexes; first unique value is stitched with --camera-index (default: 1).",
     )
     parser.add_argument("--max-num-hands", type=int, default=1)
     parser.add_argument("--min-detection-confidence", type=float, default=0.6)
