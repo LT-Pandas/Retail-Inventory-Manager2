@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import time
+from collections import deque
 
+import cv2
+import numpy as np
 from cv_modular import CVPipeline, run_webcam_loop
 from cv_modular.ble_uint8 import BleUint8Server, BleUint8ServerConfig
 from cv_modular.oled_display import OledCountDisplay, OledDisplayConfig
@@ -17,6 +20,121 @@ def _extract_object_total(results) -> int | None:
         if result.name == "box_detector":
             return result.data.get("count")
     return None
+
+
+def _draw_live_count_graph(
+    frame: np.ndarray,
+    count_history: deque[int],
+    max_history: int,
+    current_count: int,
+) -> None:
+    if frame.size == 0:
+        return
+
+    height, width = frame.shape[:2]
+    panel_width = min(560, max(320, int(width * 0.34)))
+    panel_height = min(250, max(180, int(height * 0.24)))
+    panel_x = width - panel_width - 24
+    panel_y = 24
+
+    overlay = frame.copy()
+    cv2.rectangle(
+        overlay,
+        (panel_x, panel_y),
+        (panel_x + panel_width, panel_y + panel_height),
+        (20, 20, 20),
+        -1,
+    )
+    cv2.rectangle(
+        overlay,
+        (panel_x, panel_y),
+        (panel_x + panel_width, panel_y + panel_height),
+        (60, 170, 255),
+        2,
+    )
+    cv2.addWeighted(overlay, 0.58, frame, 0.42, 0, frame)
+
+    title_y = panel_y + 30
+    cv2.putText(
+        frame,
+        "Live Object Count",
+        (panel_x + 16, title_y),
+        cv2.FONT_HERSHEY_DUPLEX,
+        0.72,
+        (255, 240, 220),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        f"Current: {current_count}",
+        (panel_x + panel_width - 180, title_y),
+        cv2.FONT_HERSHEY_DUPLEX,
+        0.58,
+        (100, 235, 255),
+        1,
+        cv2.LINE_AA,
+    )
+
+    graph_left = panel_x + 18
+    graph_top = panel_y + 50
+    graph_right = panel_x + panel_width - 16
+    graph_bottom = panel_y + panel_height - 18
+    graph_width = graph_right - graph_left
+    graph_height = graph_bottom - graph_top
+
+    for i in range(4):
+        y = graph_top + int((graph_height / 3) * i)
+        cv2.line(frame, (graph_left, y), (graph_right, y), (64, 64, 64), 1, cv2.LINE_AA)
+
+    for i in range(5):
+        x = graph_left + int((graph_width / 4) * i)
+        cv2.line(frame, (x, graph_top), (x, graph_bottom), (45, 45, 45), 1, cv2.LINE_AA)
+
+    history_values = list(count_history)
+    if len(history_values) < 2:
+        return
+
+    max_value = max(1, max(history_values))
+    points: list[tuple[int, int]] = []
+    for idx, value in enumerate(history_values):
+        x = graph_left + int(idx * (graph_width / max(1, max_history - 1)))
+        normalized = value / max_value
+        y = graph_bottom - int(normalized * graph_height)
+        points.append((x, y))
+
+    if len(points) >= 2:
+        area_points = [(points[0][0], graph_bottom), *points, (points[-1][0], graph_bottom)]
+        area = np.array(area_points, dtype=np.int32).reshape((-1, 1, 2))
+        area_overlay = frame.copy()
+        cv2.fillPoly(area_overlay, [area], (245, 170, 55))
+        cv2.addWeighted(area_overlay, 0.20, frame, 0.80, 0, frame)
+
+        line_points = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
+        cv2.polylines(frame, [line_points], False, (80, 220, 255), 3, cv2.LINE_AA)
+
+        cv2.circle(frame, points[-1], 5, (85, 255, 120), -1, cv2.LINE_AA)
+
+    cv2.putText(
+        frame,
+        f"0",
+        (graph_left - 12, graph_bottom + 2),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        (220, 220, 220),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        f"{max_value}",
+        (graph_left - 16, graph_top + 4),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        (220, 220, 220),
+        1,
+        cv2.LINE_AA,
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -262,6 +380,8 @@ def main() -> None:
 
     ble_server = None
     last_total: int | None = None
+    max_graph_history = 100
+    count_history: deque[int] = deque(maxlen=max_graph_history)
     if args.ble_enabled:
         ble_server = BleUint8Server(
             BleUint8ServerConfig(
@@ -301,6 +421,8 @@ def main() -> None:
         if total is None:
             return
         last_total = total
+        count_history.append(total)
+        _draw_live_count_graph(output.frame, count_history, max_graph_history, total)
 
         if oled_display is not None:
             oled_display.render_count(total)
