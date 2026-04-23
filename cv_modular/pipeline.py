@@ -135,12 +135,16 @@ def run_webcam_loop(
                 print("Webcam read failed for one of the active cameras.")
                 break
 
+            # Keep frames crisp by avoiding interpolation-based resizing.
+            # If camera outputs differ slightly in size, center-crop to the common height.
             min_height = min(frame.shape[0] for frame in frames_bgr)
             normalized_frames = []
             for frame in frames_bgr:
                 if frame.shape[0] != min_height:
-                    width = int(frame.shape[1] * (min_height / frame.shape[0]))
-                    frame = cv2.resize(frame, (width, min_height), interpolation=cv2.INTER_AREA)
+                    delta = frame.shape[0] - min_height
+                    top = max(0, delta // 2)
+                    bottom = top + min_height
+                    frame = frame[top:bottom, :]
                 normalized_frames.append(frame)
 
             stitched_frame = cv2.hconcat(normalized_frames)
