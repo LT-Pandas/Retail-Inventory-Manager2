@@ -162,10 +162,8 @@ def run_webcam_loop(
                     fy=display_scale,
                     interpolation=cv2.INTER_AREA,
                 )
-            cv2.imshow(window_name, frame_to_show)
-
             if show_window:
-                cv2.imshow(window_name, output.frame)
+                cv2.imshow(window_name, frame_to_show)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q"):
                     break
