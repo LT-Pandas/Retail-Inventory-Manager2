@@ -22,45 +22,30 @@ def _extract_object_total(results) -> int | None:
     return None
 
 
-def _draw_live_count_graph(
-    frame: np.ndarray,
+def _build_live_count_graph_frame(
     count_history: deque[int],
     max_history: int,
     current_count: int,
-) -> None:
-    if frame.size == 0:
-        return
+    width: int = 760,
+    height: int = 360,
+) -> np.ndarray:
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame[:] = (18, 18, 18)
 
-    height, width = frame.shape[:2]
-    panel_width = min(560, max(320, int(width * 0.34)))
-    panel_height = min(250, max(180, int(height * 0.24)))
-    panel_x = width - panel_width - 24
-    panel_y = 24
+    panel_margin = 16
+    panel_x = panel_margin
+    panel_y = panel_margin
+    panel_width = width - (panel_margin * 2)
+    panel_height = height - (panel_margin * 2)
+    cv2.rectangle(frame, (panel_x, panel_y), (panel_x + panel_width, panel_y + panel_height), (45, 45, 45), 1)
 
-    overlay = frame.copy()
-    cv2.rectangle(
-        overlay,
-        (panel_x, panel_y),
-        (panel_x + panel_width, panel_y + panel_height),
-        (20, 20, 20),
-        -1,
-    )
-    cv2.rectangle(
-        overlay,
-        (panel_x, panel_y),
-        (panel_x + panel_width, panel_y + panel_height),
-        (60, 170, 255),
-        2,
-    )
-    cv2.addWeighted(overlay, 0.58, frame, 0.42, 0, frame)
-
-    title_y = panel_y + 30
+    title_y = panel_y + 28
     cv2.putText(
         frame,
-        "Live Object Count",
+        "Detection Stability (Live Object Count)",
         (panel_x + 16, title_y),
         cv2.FONT_HERSHEY_DUPLEX,
-        0.72,
+        0.68,
         (255, 240, 220),
         1,
         cv2.LINE_AA,
@@ -77,7 +62,7 @@ def _draw_live_count_graph(
     )
 
     graph_left = panel_x + 18
-    graph_top = panel_y + 50
+    graph_top = panel_y + 48
     graph_right = panel_x + panel_width - 16
     graph_bottom = panel_y + panel_height - 18
     graph_width = graph_right - graph_left
@@ -93,7 +78,17 @@ def _draw_live_count_graph(
 
     history_values = list(count_history)
     if len(history_values) < 2:
-        return
+        cv2.putText(
+            frame,
+            "Collecting samples...",
+            (graph_left + 8, graph_top + 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (190, 190, 190),
+            1,
+            cv2.LINE_AA,
+        )
+        return frame
 
     max_value = max(1, max(history_values))
     points: list[tuple[int, int]] = []
@@ -135,6 +130,7 @@ def _draw_live_count_graph(
         1,
         cv2.LINE_AA,
     )
+    return frame
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -322,6 +318,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--stability-graph-enabled",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Show a dedicated OpenCV window with a live count trend graph. "
+            "Useful for testing detection stability over time."
+        ),
+    )
+    parser.add_argument(
         "--button-gpio-pin",
         type=int,
         default=17,
@@ -382,6 +387,7 @@ def main() -> None:
     last_total: int | None = None
     max_graph_history = 100
     count_history: deque[int] = deque(maxlen=max_graph_history)
+    graph_window_name = "Detection Stability Graph"
     if args.ble_enabled:
         ble_server = BleUint8Server(
             BleUint8ServerConfig(
@@ -422,7 +428,13 @@ def main() -> None:
             return
         last_total = total
         count_history.append(total)
-        _draw_live_count_graph(output.frame, count_history, max_graph_history, total)
+        if args.stability_graph_enabled and not args.headless:
+            graph_frame = _build_live_count_graph_frame(
+                count_history=count_history,
+                max_history=max_graph_history,
+                current_count=total,
+            )
+            cv2.imshow(graph_window_name, graph_frame)
 
         if oled_display is not None:
             oled_display.render_count(total)
