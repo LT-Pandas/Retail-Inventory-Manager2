@@ -23,9 +23,10 @@ class BoxDetectorConfig:
     num_disparities: int = 96
     block_size: int = 7
     disparity_foreground_threshold: float = 1.0
+    min_depth_contrast: float = 0.75
     color_saturation_threshold: int = 35
     color_value_threshold: int = 55
-    min_edge_ratio: float = 0.012
+    min_edge_ratio: float = 0.008
     depth_merge_threshold: float = 4.0
     bbox_gap_merge_px: int = 42
     mask_alpha: float = 0.28
@@ -142,6 +143,10 @@ class BoxDetectorProcessor:
         edge_map = cv2.Canny(gray_left, 50, 150)
 
         foreground = np.zeros_like(gray_left, dtype=np.uint8)
+        # Prefer depth as the primary foreground cue so low-texture standalone
+        # objects (e.g. books on a floor) can still be segmented.
+        foreground[valid_disparity] = 255
+        # Keep colorful foreground even when disparity gets locally thin/noisy.
         foreground[valid_disparity & colorful] = 255
         foreground = cv2.morphologyEx(
             foreground, cv2.MORPH_CLOSE, np.ones((7, 7), dtype=np.uint8), iterations=2
@@ -176,6 +181,20 @@ class BoxDetectorProcessor:
             if depth_values.size == 0:
                 continue
             mean_disparity = float(np.median(depth_values))
+            # Require measurable depth separation from nearby background so we
+            # rely more on stereo geometry than color alone.
+            ring_radius = max(3, int(round(9 * scale)))
+            kernel = cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE, (ring_radius * 2 + 1, ring_radius * 2 + 1)
+            )
+            expanded_mask = cv2.dilate(component_mask.astype(np.uint8), kernel, iterations=1) > 0
+            ring_mask = expanded_mask & (~component_mask)
+            ring_depth_values = disparity[ring_mask & valid_disparity]
+            if ring_depth_values.size > 20:
+                background_disparity = float(np.median(ring_depth_values))
+                depth_contrast = abs(mean_disparity - background_disparity)
+                if depth_contrast < self.config.min_depth_contrast:
+                    continue
             candidates.append(
                 {
                     "x": x,
