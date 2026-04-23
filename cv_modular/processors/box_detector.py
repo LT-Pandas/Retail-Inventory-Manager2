@@ -24,10 +24,12 @@ class BoxDetectorConfig:
     block_size: int = 7
     disparity_foreground_threshold: float = 1.0
     color_saturation_threshold: int = 35
-    color_value_threshold: int = 35
+    color_value_threshold: int = 55
+    min_edge_ratio: float = 0.012
     depth_merge_threshold: float = 4.0
     bbox_gap_merge_px: int = 42
     mask_alpha: float = 0.28
+    processing_scale: float = 0.6
     calibration_file: str | None = "stereo_calibration.npz"
     draw_color: tuple[int, int, int] = (0, 255, 0)
 
@@ -117,18 +119,27 @@ class BoxDetectorProcessor:
     def process(self, frame: np.ndarray) -> ProcessorResult:
         left, right = self._split_stereo_frame(frame)
         left, right = self._rectify_if_available(left, right)
-        gray_left = cv2.cvtColor(left, cv2.COLOR_BGR2GRAY)
-        gray_right = cv2.cvtColor(right, cv2.COLOR_BGR2GRAY)
+        scale = min(1.0, max(0.25, float(self.config.processing_scale)))
+        if scale < 1.0:
+            left_proc = cv2.resize(left, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+            right_proc = cv2.resize(right, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+        else:
+            left_proc = left
+            right_proc = right
+
+        gray_left = cv2.cvtColor(left_proc, cv2.COLOR_BGR2GRAY)
+        gray_right = cv2.cvtColor(right_proc, cv2.COLOR_BGR2GRAY)
 
         disparity_raw = self.stereo.compute(gray_left, gray_right).astype(np.float32) / 16.0
         disparity = cv2.medianBlur(disparity_raw, 5)
         valid_disparity = disparity > self.config.disparity_foreground_threshold
 
-        hsv_left = cv2.cvtColor(left, cv2.COLOR_BGR2HSV)
+        hsv_left = cv2.cvtColor(left_proc, cv2.COLOR_BGR2HSV)
         colorful = (
             (hsv_left[:, :, 1] >= self.config.color_saturation_threshold)
             & (hsv_left[:, :, 2] >= self.config.color_value_threshold)
         )
+        edge_map = cv2.Canny(gray_left, 50, 150)
 
         foreground = np.zeros_like(gray_left, dtype=np.uint8)
         foreground[valid_disparity & colorful] = 255
@@ -141,6 +152,7 @@ class BoxDetectorProcessor:
 
         component_count, component_labels, stats, _ = cv2.connectedComponentsWithStats(foreground, connectivity=8)
         candidates: list[dict[str, float | int | np.ndarray]] = []
+        min_area = max(1, int(self.config.min_area * (scale**2)))
 
         for component_id in range(1, component_count):
             x = int(stats[component_id, cv2.CC_STAT_LEFT])
@@ -148,7 +160,7 @@ class BoxDetectorProcessor:
             width = int(stats[component_id, cv2.CC_STAT_WIDTH])
             height = int(stats[component_id, cv2.CC_STAT_HEIGHT])
             area = int(stats[component_id, cv2.CC_STAT_AREA])
-            if area < self.config.min_area or height <= 0:
+            if area < min_area or height <= 0:
                 continue
             aspect_ratio = width / float(height)
             if not self.config.min_aspect_ratio <= aspect_ratio <= self.config.max_aspect_ratio:
@@ -156,8 +168,10 @@ class BoxDetectorProcessor:
             fill_ratio = area / float(max(1, width * height))
             if fill_ratio < self.config.min_fill_ratio:
                 continue
-
             component_mask = component_labels == component_id
+            edge_ratio = float(np.count_nonzero(edge_map[component_mask])) / float(area)
+            if edge_ratio < self.config.min_edge_ratio:
+                continue
             depth_values = disparity[component_mask]
             if depth_values.size == 0:
                 continue
@@ -171,6 +185,7 @@ class BoxDetectorProcessor:
                     "area": area,
                     "aspect_ratio": aspect_ratio,
                     "fill_ratio": fill_ratio,
+                    "edge_ratio": edge_ratio,
                     "mean_disparity": mean_disparity,
                     "mask": component_mask,
                 }
@@ -204,7 +219,8 @@ class BoxDetectorProcessor:
                 bx2, by2 = bx1 + int(b["width"]), by1 + int(b["height"])
                 horizontal_gap = max(0, max(bx1 - ax2, ax1 - bx2))
                 vertical_gap = max(0, max(by1 - ay2, ay1 - by2))
-                if max(horizontal_gap, vertical_gap) <= self.config.bbox_gap_merge_px:
+                merge_gap = max(1, int(round(self.config.bbox_gap_merge_px * scale)))
+                if max(horizontal_gap, vertical_gap) <= merge_gap:
                     union(i, j)
 
         grouped: dict[int, list[dict[str, float | int | np.ndarray]]] = {}
@@ -227,7 +243,7 @@ class BoxDetectorProcessor:
                 continue
             contour = max(contours, key=cv2.contourArea)
             area = cv2.contourArea(contour)
-            if area < self.config.min_area:
+            if area < min_area:
                 continue
             perimeter = cv2.arcLength(contour, True)
             approximation = cv2.approxPolyDP(contour, self.config.epsilon_ratio * perimeter, True)
@@ -241,9 +257,22 @@ class BoxDetectorProcessor:
             if fill_ratio < self.config.min_fill_ratio:
                 continue
 
+            render_mask = merged_mask
+            if scale < 1.0:
+                render_mask = cv2.resize(
+                    merged_mask,
+                    (left.shape[1], left.shape[0]),
+                    interpolation=cv2.INTER_NEAREST,
+                )
             color_layer = np.zeros_like(left, dtype=np.uint8)
-            color_layer[merged_mask > 0] = self.config.draw_color
+            color_layer[render_mask > 0] = self.config.draw_color
             overlay = cv2.addWeighted(overlay, 1.0, color_layer, self.config.mask_alpha, 0)
+            if scale < 1.0:
+                approximation = np.round(approximation.astype(np.float32) / scale).astype(np.int32)
+                x = int(round(x / scale))
+                y = int(round(y / scale))
+                width = int(round(width / scale))
+                height = int(round(height / scale))
             cv2.drawContours(overlay, [approximation], -1, self.config.draw_color, 2)
             label = f"Object {len(boxes) + 1}"
             cv2.putText(
@@ -269,7 +298,7 @@ class BoxDetectorProcessor:
                     "mean_disparity": round(mean_disparity, 3),
                 }
             )
-            mask_list.append(merged_mask)
+            mask_list.append(render_mask)
 
         split = frame.shape[1] // 2
         frame[:, :split] = overlay
