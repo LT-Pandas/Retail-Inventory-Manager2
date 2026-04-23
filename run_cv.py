@@ -72,6 +72,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum disparity delta to merge nearby color blobs into one object.",
     )
     parser.add_argument(
+        "--object-min-edge-ratio",
+        type=float,
+        default=0.012,
+        help="Minimum edge density inside a candidate; helps reject soft shadows.",
+    )
+    parser.add_argument(
+        "--stereo-processing-scale",
+        type=float,
+        default=0.6,
+        help="Downscale factor used internally for stereo matching to improve FPS (0.25-1.0).",
+    )
+    parser.add_argument(
         "--stereo-bbox-merge-gap",
         type=int,
         default=42,
@@ -210,8 +222,10 @@ def main() -> None:
                 max_aspect_ratio=args.object_max_aspect_ratio,
                 disparity_foreground_threshold=args.stereo_disparity_threshold,
                 depth_merge_threshold=args.depth_merge_threshold,
+                min_edge_ratio=args.object_min_edge_ratio,
                 bbox_gap_merge_px=args.stereo_bbox_merge_gap,
                 mask_alpha=args.mask_alpha,
+                processing_scale=args.stereo_processing_scale,
                 calibration_file=args.stereo_calibration_file,
             )
         )

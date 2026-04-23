@@ -152,6 +152,18 @@ Tune contour sensitivity for your setup:
 python run_cv.py --min-object-area 1800 --object-epsilon-ratio 0.03
 ```
 
+Reduce shadow false positives by requiring more texture/edges in candidates:
+
+```bash
+python run_cv.py --object-min-edge-ratio 0.02
+```
+
+Increase frame rate by running stereo matching on a downscaled internal image:
+
+```bash
+python run_cv.py --stereo-processing-scale 0.5
+```
+
 Enable depth-informed merging of nearby color blobs (single physical object with multiple colors):
 
 ```bash
@@ -188,3 +200,5 @@ python run_cv.py --object-min-aspect-ratio 0.6 --object-max-aspect-ratio 1.8
   - Increase `--min-object-area` if noise/small contours are getting counted.
   - Lower `--min-object-area` if valid objects are being missed.
   - Tighten `--object-min-aspect-ratio` / `--object-max-aspect-ratio` to match expected object shape.
+  - Raise `--object-min-edge-ratio` if shadows are frequently detected as objects.
+  - Lower `--stereo-processing-scale` (for example, `0.5`) to improve FPS on slower hardware.
