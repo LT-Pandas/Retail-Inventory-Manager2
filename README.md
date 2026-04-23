@@ -16,13 +16,13 @@ This project runs real-time object detection on a Raspberry Pi camera feed, with
 │   ├── oled_display.py                     # SPI OLED output (luma.oled)
 │   ├── ble_uint8.py                        # BLE uint8 GATT server (optional)
 │   └── processors/
-│       └── object_detector.py              # MediaPipe object detector
+│       └── box_detector.py                 # OpenCV contour-based object detector
 └── docs/
     └── CARDBOARD_MODEL_TRAINING.md         # Optional model-training workflow docs
 ```
 
 Notes:
-- `run_cv.py` is now focused on `ObjectDetectorProcessor`.
+- `run_cv.py` is focused on OpenCV contour-based object detection.
 
 ---
 
@@ -41,7 +41,6 @@ luma.core>=2.4.2
 - `picamera2` (required on Raspberry Pi for camera capture).
 - `gpiozero` (required only for `--button-controlled`).
 - `bluezero` (required only for `--ble-enabled`).
-- `mediapipe` (required only for `--detect-objects` / `--object-model`).
 
 ## D) Arduino simple LED setup
 Arduino sketch LED pins:
@@ -106,7 +105,7 @@ pip install -r requirements.txt
 Install optional packages only when needed:
 
 ```bash
-pip install gpiozero bluezero mediapipe
+pip install gpiozero bluezero
 ```
 
 (Install only the ones you plan to use.)
@@ -147,16 +146,16 @@ Object detection is enabled by default:
 python run_cv.py
 ```
 
-Higher-accuracy MediaPipe model (slower):
+Tune contour sensitivity for your setup:
 
 ```bash
-python run_cv.py --detect-objects --object-model-variant efficientdet_lite2
+python run_cv.py --min-object-area 1800 --object-epsilon-ratio 0.03
 ```
 
-Reduce false positives with threshold + label filtering:
+Constrain object shape if needed:
 
 ```bash
-python run_cv.py --detect-objects --object-score-threshold 0.4 --object-label-filter box carton package
+python run_cv.py --object-min-aspect-ratio 0.6 --object-max-aspect-ratio 1.8
 ```
 
 ---
@@ -175,6 +174,6 @@ python run_cv.py --detect-objects --object-score-threshold 0.4 --object-label-fi
 - OLED init fails: try explicit `--oled-driver sh1107` (or `ssd1309` / `ssd1327`).
 - Button not responding: verify BCM numbering and physical wiring (GPIO17 is physical pin 11).
 - Object detection poor quality:
-  - Try `--object-model-variant efficientdet_lite2` (better accuracy, lower FPS).
-  - Raise `--object-score-threshold` to reduce false positives, or lower it slightly to catch missed detections.
-  - Provide `--object-label-filter ...` only if you are sure of expected labels; leaving it unset keeps all labels.
+  - Increase `--min-object-area` if noise/small contours are getting counted.
+  - Lower `--min-object-area` if valid objects are being missed.
+  - Tighten `--object-min-aspect-ratio` / `--object-max-aspect-ratio` to match expected object shape.

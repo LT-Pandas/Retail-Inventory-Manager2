@@ -7,14 +7,14 @@ from cv_modular import CVPipeline, run_webcam_loop
 from cv_modular.ble_uint8 import BleUint8Server, BleUint8ServerConfig
 from cv_modular.oled_display import OledCountDisplay, OledDisplayConfig
 from cv_modular.processors import (
-    ObjectDetectorConfig,
-    ObjectDetectorProcessor,
+    BoxDetectorConfig,
+    BoxDetectorProcessor,
 )
 
 
 def _extract_object_total(results) -> int | None:
     for result in results:
-        if result.name == "object_detector":
+        if result.name == "box_detector":
             return result.data.get("count")
     return None
 
@@ -30,46 +30,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="Additional camera indexes; first unique value is stitched with --camera-index (default: 1).",
     )
     parser.add_argument(
-        "--detect-objects",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Enable MediaPipe object detection (auto-downloads default model).",
-    )
-    parser.add_argument(
-        "--object-model",
-        type=str,
-        default=None,
-        help="Optional path to an object detection .tflite model. If omitted, a default model is downloaded.",
-    )
-    parser.add_argument(
-        "--object-model-variant",
-        choices=["efficientdet_lite0", "efficientdet_lite2"],
-        default="efficientdet_lite0",
-        help=(
-            "Built-in MediaPipe model variant used when --object-model is not provided. "
-            "lite2 is typically more accurate but slower than lite0."
-        ),
-    )
-    parser.add_argument(
-        "--object-max-results",
+        "--min-object-area",
         type=int,
-        default=5,
-        help="Maximum number of object detections to return per frame.",
+        default=2500,
+        help="Minimum contour area for an object candidate.",
     )
     parser.add_argument(
-        "--object-score-threshold",
+        "--object-epsilon-ratio",
         type=float,
-        default=0.25,
-        help="Minimum confidence score for object detections.",
+        default=0.04,
+        help="Contour simplification epsilon ratio used in polygon approximation.",
     )
     parser.add_argument(
-        "--object-label-filter",
-        nargs="*",
-        default=None,
-        help=(
-            "Optional list of substrings to keep (example: --object-label-filter box carton). "
-            "If omitted, all labels are kept."
-        ),
+        "--object-min-aspect-ratio",
+        type=float,
+        default=0.5,
+        help="Minimum bounding box aspect ratio for contour-based object detection.",
+    )
+    parser.add_argument(
+        "--object-max-aspect-ratio",
+        type=float,
+        default=2.2,
+        help="Maximum bounding box aspect ratio for contour-based object detection.",
     )
     parser.add_argument("--camera-width", type=int, default=1920, help="Camera capture width in pixels.")
     parser.add_argument("--camera-height", type=int, default=1080, help="Camera capture height in pixels.")
@@ -189,29 +171,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
 
-    processors = []
-
-    if (args.detect_objects or args.object_model) and (ObjectDetectorProcessor is None or ObjectDetectorConfig is None):
-        raise RuntimeError(
-            "Object detection requires MediaPipe, which is not installed. "
-            "Disable --detect-objects or install mediapipe."
-        )
-
-    if args.detect_objects or args.object_model:
-        label_filter = tuple(label.lower() for label in args.object_label_filter) if args.object_label_filter else None
-        processors.append(
-            ObjectDetectorProcessor(
-                ObjectDetectorConfig(
-                    model_path=args.object_model,
-                    model_variant=args.object_model_variant,
-                    max_results=args.object_max_results,
-                    score_threshold=args.object_score_threshold,
-                    label_filter=label_filter,
-                )
+    processors = [
+        BoxDetectorProcessor(
+            BoxDetectorConfig(
+                min_area=args.min_object_area,
+                epsilon_ratio=args.object_epsilon_ratio,
+                min_aspect_ratio=args.object_min_aspect_ratio,
+                max_aspect_ratio=args.object_max_aspect_ratio,
             )
         )
-    if not processors:
-        raise RuntimeError("No processors configured. Enable --detect-objects or provide --object-model.")
+    ]
     pipeline = CVPipeline(processors)
 
     button = None
