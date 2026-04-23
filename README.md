@@ -192,6 +192,20 @@ Install systemd autostart on Raspberry Pi (runs on boot):
 ./deploy/systemd/install_autostart_service.sh
 ```
 
+When developing in an IDE on the same Pi (so you can view the live camera window), stop the autostart service first to avoid camera/GPIO conflicts:
+
+```bash
+sudo systemctl stop retail-inventory-manager.service
+pkill -f run_cv.py || true
+sleep 2
+```
+
+Start the service again when you're done developing:
+
+```bash
+sudo systemctl start retail-inventory-manager.service
+```
+
 See detailed steps: `docs/AUTOSTART_RASPBERRY_PI.md`.
 
 ---
