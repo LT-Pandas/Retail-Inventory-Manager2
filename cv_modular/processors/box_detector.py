@@ -23,9 +23,11 @@ class BoxDetectorConfig:
     num_disparities: int = 96
     block_size: int = 7
     disparity_foreground_threshold: float = 1.0
-    color_saturation_threshold: int = 35
-    color_value_threshold: int = 55
-    min_edge_ratio: float = 0.012
+    color_saturation_threshold: int = 30
+    color_value_threshold: int = 45
+    low_saturation_edge_ratio: float = 0.02
+    low_saturation_local_std_threshold: float = 12.0
+    min_edge_ratio: float = 0.01
     depth_merge_threshold: float = 4.0
     bbox_gap_merge_px: int = 42
     mask_alpha: float = 0.28
@@ -141,8 +143,22 @@ class BoxDetectorProcessor:
         )
         edge_map = cv2.Canny(gray_left, 50, 150)
 
+        # Books and cardboard can be low-saturation but still highly textured.
+        # Capture those candidates with a grayscale texture heuristic.
+        local_std = cv2.blur((gray_left.astype(np.float32) ** 2), (7, 7)) - (
+            cv2.blur(gray_left.astype(np.float32), (7, 7)) ** 2
+        )
+        local_std = np.sqrt(np.clip(local_std, 0.0, None))
+        low_saturation_texture = (
+            (hsv_left[:, :, 1] < self.config.color_saturation_threshold)
+            & (hsv_left[:, :, 2] >= self.config.color_value_threshold)
+            & (local_std >= self.config.low_saturation_local_std_threshold)
+        )
+        edge_density = cv2.blur((edge_map > 0).astype(np.float32), (9, 9))
+        textured = low_saturation_texture & (edge_density >= self.config.low_saturation_edge_ratio)
+
         foreground = np.zeros_like(gray_left, dtype=np.uint8)
-        foreground[valid_disparity & colorful] = 255
+        foreground[valid_disparity & (colorful | textured)] = 255
         foreground = cv2.morphologyEx(
             foreground, cv2.MORPH_CLOSE, np.ones((7, 7), dtype=np.uint8), iterations=2
         )
