@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import argparse
 import time
+from collections import deque
 
+import cv2
+import numpy as np
 from cv_modular import CVPipeline, run_webcam_loop
 from cv_modular.ble_uint8 import BleUint8Server, BleUint8ServerConfig
 from cv_modular.oled_display import OledCountDisplay, OledDisplayConfig
@@ -17,6 +20,117 @@ def _extract_object_total(results) -> int | None:
         if result.name == "box_detector":
             return result.data.get("count")
     return None
+
+
+def _build_live_count_graph_frame(
+    count_history: deque[int],
+    max_history: int,
+    current_count: int,
+    width: int = 760,
+    height: int = 360,
+) -> np.ndarray:
+    frame = np.zeros((height, width, 3), dtype=np.uint8)
+    frame[:] = (18, 18, 18)
+
+    panel_margin = 16
+    panel_x = panel_margin
+    panel_y = panel_margin
+    panel_width = width - (panel_margin * 2)
+    panel_height = height - (panel_margin * 2)
+    cv2.rectangle(frame, (panel_x, panel_y), (panel_x + panel_width, panel_y + panel_height), (45, 45, 45), 1)
+
+    title_y = panel_y + 28
+    cv2.putText(
+        frame,
+        "Detection Stability (Live Object Count)",
+        (panel_x + 16, title_y),
+        cv2.FONT_HERSHEY_DUPLEX,
+        0.68,
+        (255, 240, 220),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        f"Current: {current_count}",
+        (panel_x + panel_width - 180, title_y),
+        cv2.FONT_HERSHEY_DUPLEX,
+        0.58,
+        (100, 235, 255),
+        1,
+        cv2.LINE_AA,
+    )
+
+    graph_left = panel_x + 18
+    graph_top = panel_y + 48
+    graph_right = panel_x + panel_width - 16
+    graph_bottom = panel_y + panel_height - 18
+    graph_width = graph_right - graph_left
+    graph_height = graph_bottom - graph_top
+
+    for i in range(4):
+        y = graph_top + int((graph_height / 3) * i)
+        cv2.line(frame, (graph_left, y), (graph_right, y), (64, 64, 64), 1, cv2.LINE_AA)
+
+    for i in range(5):
+        x = graph_left + int((graph_width / 4) * i)
+        cv2.line(frame, (x, graph_top), (x, graph_bottom), (45, 45, 45), 1, cv2.LINE_AA)
+
+    history_values = list(count_history)
+    if len(history_values) < 2:
+        cv2.putText(
+            frame,
+            "Collecting samples...",
+            (graph_left + 8, graph_top + 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (190, 190, 190),
+            1,
+            cv2.LINE_AA,
+        )
+        return frame
+
+    max_value = max(1, max(history_values))
+    points: list[tuple[int, int]] = []
+    for idx, value in enumerate(history_values):
+        x = graph_left + int(idx * (graph_width / max(1, max_history - 1)))
+        normalized = value / max_value
+        y = graph_bottom - int(normalized * graph_height)
+        points.append((x, y))
+
+    if len(points) >= 2:
+        area_points = [(points[0][0], graph_bottom), *points, (points[-1][0], graph_bottom)]
+        area = np.array(area_points, dtype=np.int32).reshape((-1, 1, 2))
+        area_overlay = frame.copy()
+        cv2.fillPoly(area_overlay, [area], (245, 170, 55))
+        cv2.addWeighted(area_overlay, 0.20, frame, 0.80, 0, frame)
+
+        line_points = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
+        cv2.polylines(frame, [line_points], False, (80, 220, 255), 3, cv2.LINE_AA)
+
+        cv2.circle(frame, points[-1], 5, (85, 255, 120), -1, cv2.LINE_AA)
+
+    cv2.putText(
+        frame,
+        f"0",
+        (graph_left - 12, graph_bottom + 2),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        (220, 220, 220),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        f"{max_value}",
+        (graph_left - 16, graph_top + 4),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        (220, 220, 220),
+        1,
+        cv2.LINE_AA,
+    )
+    return frame
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -204,6 +318,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--stability-graph-enabled",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Show a dedicated OpenCV window with a live count trend graph. "
+            "Useful for testing detection stability over time."
+        ),
+    )
+    parser.add_argument(
         "--button-gpio-pin",
         type=int,
         default=17,
@@ -262,6 +385,9 @@ def main() -> None:
 
     ble_server = None
     last_total: int | None = None
+    max_graph_history = 100
+    count_history: deque[int] = deque(maxlen=max_graph_history)
+    graph_window_name = "Detection Stability Graph"
     if args.ble_enabled:
         ble_server = BleUint8Server(
             BleUint8ServerConfig(
@@ -301,6 +427,14 @@ def main() -> None:
         if total is None:
             return
         last_total = total
+        count_history.append(total)
+        if args.stability_graph_enabled and not args.headless:
+            graph_frame = _build_live_count_graph_frame(
+                count_history=count_history,
+                max_history=max_graph_history,
+                current_count=total,
+            )
+            cv2.imshow(graph_window_name, graph_frame)
 
         if oled_display is not None:
             oled_display.render_count(total)
