@@ -66,6 +66,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Minimum disparity considered foreground in stereo depth mask.",
     )
     parser.add_argument(
+        "--stereo-min-depth-contrast",
+        type=float,
+        default=0.75,
+        help="Minimum disparity contrast against nearby background for a valid object.",
+    )
+    parser.add_argument(
         "--depth-merge-threshold",
         type=float,
         default=4.0,
@@ -74,7 +80,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--object-min-edge-ratio",
         type=float,
-        default=0.012,
+        default=0.008,
         help="Minimum edge density inside a candidate; helps reject soft shadows.",
     )
     parser.add_argument(
@@ -230,6 +236,7 @@ def main() -> None:
                 min_aspect_ratio=args.object_min_aspect_ratio,
                 max_aspect_ratio=args.object_max_aspect_ratio,
                 disparity_foreground_threshold=args.stereo_disparity_threshold,
+                min_depth_contrast=args.stereo_min_depth_contrast,
                 depth_merge_threshold=args.depth_merge_threshold,
                 min_edge_ratio=args.object_min_edge_ratio,
                 bbox_gap_merge_px=args.stereo_bbox_merge_gap,
