@@ -22,7 +22,7 @@ This project runs real-time object detection on a Raspberry Pi camera feed, with
 ```
 
 Notes:
-- `run_cv.py` is focused on OpenCV contour-based object detection.
+- `run_cv.py` uses OpenCV and now supports stereo depth-aware mask generation from a dual-camera feed.
 
 ---
 
@@ -152,6 +152,16 @@ Tune contour sensitivity for your setup:
 python run_cv.py --min-object-area 1800 --object-epsilon-ratio 0.03
 ```
 
+Enable depth-informed merging of nearby color blobs (single physical object with multiple colors):
+
+```bash
+python run_cv.py \
+  --stereo-calibration-file stereo_calibration.npz \
+  --stereo-disparity-threshold 1.2 \
+  --depth-merge-threshold 4.0 \
+  --stereo-bbox-merge-gap 42
+```
+
 Constrain object shape if needed:
 
 ```bash
@@ -177,6 +187,7 @@ python run_cv.py --object-processing-scale 0.45 --shadow-min-saturation 35 --sha
 
 ## 7) Quick troubleshooting
 - Dual-camera stream requires two working indexes, e.g. `--camera-index 0 --fallback-camera-indexes 1`.
+- If the window shows `Stereo not rectified (no calibration maps)`, provide `--stereo-calibration-file <file>.npz` containing left/right rectification maps.
 - OLED init fails: try explicit `--oled-driver sh1107` (or `ssd1309` / `ssd1327`).
 - Button not responding: verify BCM numbering and physical wiring (GPIO17 is physical pin 11).
 - Object detection poor quality:
