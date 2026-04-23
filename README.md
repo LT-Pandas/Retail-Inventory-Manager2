@@ -163,6 +163,6 @@ python run_cv.py --detect-objects
 ---
 
 ## 7) Quick troubleshooting
-- Camera fails to open: try `--camera-index 0 --fallback-camera-indexes 1`.
+- Dual-camera stream requires two working indexes, e.g. `--camera-index 0 --fallback-camera-indexes 1`.
 - OLED init fails: try explicit `--oled-driver sh1107` (or `ssd1309` / `ssd1327`).
 - Button not responding: verify BCM numbering and physical wiring (GPIO17 is physical pin 11).
