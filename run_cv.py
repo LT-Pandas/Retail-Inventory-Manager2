@@ -54,34 +54,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum bounding box aspect ratio for contour-based object detection.",
     )
     parser.add_argument(
-        "--stereo-calibration-file",
-        type=str,
-        default="stereo_calibration.npz",
-        help="Optional .npz file containing rectification maps for left/right cameras.",
-    )
-    parser.add_argument(
-        "--stereo-disparity-threshold",
+        "--object-processing-scale",
         type=float,
-        default=1.0,
-        help="Minimum disparity considered foreground in stereo depth mask.",
+        default=0.5,
+        help="Scale used for contour detection work (0.2-1.0). Lower values improve FPS.",
     )
     parser.add_argument(
-        "--depth-merge-threshold",
-        type=float,
-        default=4.0,
-        help="Maximum disparity delta to merge nearby color blobs into one object.",
-    )
-    parser.add_argument(
-        "--stereo-bbox-merge-gap",
+        "--shadow-min-saturation",
         type=int,
-        default=42,
-        help="Maximum pixel gap between components eligible for depth-based merge.",
+        default=28,
+        help="Minimum HSV saturation for dark-region edge acceptance (higher rejects more shadows).",
     )
     parser.add_argument(
-        "--mask-alpha",
-        type=float,
-        default=0.28,
-        help="Opacity of rendered object masks on the left camera frame.",
+        "--shadow-min-value",
+        type=int,
+        default=55,
+        help="Minimum HSV value for dark-region edge acceptance (higher rejects more shadows).",
     )
     parser.add_argument("--camera-width", type=int, default=1920, help="Camera capture width in pixels.")
     parser.add_argument("--camera-height", type=int, default=1080, help="Camera capture height in pixels.")
@@ -208,11 +196,9 @@ def main() -> None:
                 epsilon_ratio=args.object_epsilon_ratio,
                 min_aspect_ratio=args.object_min_aspect_ratio,
                 max_aspect_ratio=args.object_max_aspect_ratio,
-                disparity_foreground_threshold=args.stereo_disparity_threshold,
-                depth_merge_threshold=args.depth_merge_threshold,
-                bbox_gap_merge_px=args.stereo_bbox_merge_gap,
-                mask_alpha=args.mask_alpha,
-                calibration_file=args.stereo_calibration_file,
+                processing_scale=args.object_processing_scale,
+                shadow_min_saturation=args.shadow_min_saturation,
+                shadow_min_value=args.shadow_min_value,
             )
         )
     ]
