@@ -75,6 +75,15 @@ Recommended wiring (Pi 40-pin header):
 | DC | GPIO25 | 22 |
 | RST / RES | GPIO24 | 18 |
 
+What each OLED pin does:
+- **VCC**: powers the OLED module (3.3V logic/power rail).
+- **GND**: common electrical ground reference.
+- **SCLK / CLK**: SPI clock line from Pi to OLED; synchronizes data transfer timing.
+- **MOSI / DIN**: SPI data line from Pi to OLED; carries display bytes/commands.
+- **CS**: chip-select line; enables this OLED on the SPI bus when active.
+- **DC**: data/command select; chooses whether incoming bytes are display data or control commands.
+- **RST / RES**: hardware reset input; reinitializes the display controller during startup/recovery.
+
 Driver chip note:
 - Your OLED module’s onboard controller/driver chip should be one of: `ssd1309`, `sh1107`, or `ssd1327`.
 - Default auto-init tries: `ssd1309` -> `sh1107` -> `ssd1327`.
@@ -86,6 +95,10 @@ Project default:
 Wiring:
 - Button leg 1 -> **BCM 17** (physical pin **11**)
 - Button leg 2 -> **GND** (for example physical pin **14**)
+
+What each button connection does:
+- **BCM 17 (signal pin)**: reads button presses in software.
+- **GND**: provides the reference level so pressing the button pulls the GPIO signal low.
 
 Important:
 - Do **not** use physical pin 17 for this signal (that pin is 3.3V power).
