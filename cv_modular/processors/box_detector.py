@@ -32,6 +32,10 @@ class BoxDetectorConfig:
     processing_scale: float = 0.6
     calibration_file: str | None = "stereo_calibration.npz"
     draw_color: tuple[int, int, int] = (0, 255, 0)
+    edge_binary_low_threshold: int = 50
+    edge_binary_high_threshold: int = 150
+    edge_binary_close_kernel: int = 3
+    edge_binary_dilate_iterations: int = 1
 
 
 class BoxDetectorProcessor:
@@ -139,7 +143,24 @@ class BoxDetectorProcessor:
             (hsv_left[:, :, 1] >= self.config.color_saturation_threshold)
             & (hsv_left[:, :, 2] >= self.config.color_value_threshold)
         )
-        edge_map = cv2.Canny(gray_left, 50, 150)
+        edge_map = cv2.Canny(
+            gray_left,
+            self.config.edge_binary_low_threshold,
+            self.config.edge_binary_high_threshold,
+        )
+
+        # Build a binary view where edges are white and everything else is black.
+        edge_binary = np.zeros_like(gray_left, dtype=np.uint8)
+        edge_binary[edge_map > 0] = 255
+        close_kernel_size = max(1, int(self.config.edge_binary_close_kernel))
+        close_kernel = np.ones((close_kernel_size, close_kernel_size), dtype=np.uint8)
+        edge_binary = cv2.morphologyEx(edge_binary, cv2.MORPH_CLOSE, close_kernel, iterations=1)
+        if self.config.edge_binary_dilate_iterations > 0:
+            edge_binary = cv2.dilate(
+                edge_binary,
+                np.ones((3, 3), dtype=np.uint8),
+                iterations=int(self.config.edge_binary_dilate_iterations),
+            )
 
         foreground = np.zeros_like(gray_left, dtype=np.uint8)
         foreground[valid_disparity & colorful] = 255
@@ -169,7 +190,7 @@ class BoxDetectorProcessor:
             if fill_ratio < self.config.min_fill_ratio:
                 continue
             component_mask = component_labels == component_id
-            edge_ratio = float(np.count_nonzero(edge_map[component_mask])) / float(area)
+            edge_ratio = float(np.count_nonzero(edge_binary[component_mask])) / float(area)
             if edge_ratio < self.config.min_edge_ratio:
                 continue
             depth_values = disparity[component_mask]
