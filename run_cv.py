@@ -158,6 +158,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--headless",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help=(
+            "Run without opening the OpenCV preview window. "
+            "Useful for boot-time systemd startup on Raspberry Pi without a monitor."
+        ),
+    )
+    parser.add_argument(
         "--button-gpio-pin",
         type=int,
         default=17,
@@ -233,7 +242,10 @@ def main() -> None:
             )
         )
         print("BLE uint8 server enabled.")
-        print("In nRF Connect: connect, enable notifications, then press 'o' in the CV window.")
+        if args.headless:
+            print("In nRF Connect: connect and enable notifications (headless mode has no keyboard trigger).")
+        else:
+            print("In nRF Connect: connect, enable notifications, then press 'o' in the CV window.")
 
     oled_display = None
     if args.oled_enabled:
@@ -292,9 +304,12 @@ def main() -> None:
             camera_autofocus=not args.no_camera_autofocus,
             camera_lens_position=args.camera_lens_position,
             on_key=on_key,
+            show_window=not args.headless,
         )
 
     try:
+        if args.headless:
+            print("Headless mode enabled: no OpenCV window will be shown.")
         if args.button_controlled:
             while True:
                 print("Waiting for button press to start...")

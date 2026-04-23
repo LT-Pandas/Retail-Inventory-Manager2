@@ -151,6 +151,20 @@ Enable optional MediaPipe object detection:
 python run_cv.py --detect-objects
 ```
 
+Headless mode (no monitor attached):
+
+```bash
+python run_cv.py --headless
+```
+
+Install systemd autostart on Raspberry Pi (runs on boot):
+
+```bash
+./deploy/systemd/install_autostart_service.sh
+```
+
+See detailed steps: `docs/AUTOSTART_RASPBERRY_PI.md`.
+
 ---
 
 ## 6) Runtime outputs (what updates where)

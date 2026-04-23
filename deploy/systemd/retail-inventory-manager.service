@@ -1,0 +1,17 @@
+[Unit]
+Description=Retail Inventory Manager CV service
+After=network-online.target bluetooth.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/Retail-Inventory-Manager2
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/pi/Retail-Inventory-Manager2/mp-venv/bin/python /home/pi/Retail-Inventory-Manager2/run_cv.py --headless
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
