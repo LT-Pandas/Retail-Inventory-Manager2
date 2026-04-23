@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from pathlib import Path
+import time
 
 
 @dataclass
@@ -16,7 +18,7 @@ class OledDisplayConfig:
 
 
 class OledCountDisplay:
-    """Render the current count as a single number on an SPI OLED display."""
+    """Render a vibrating cord-like ring whose frequency scales with object count."""
 
     _AUTO_DRIVERS = ["ssd1309", "sh1107", "ssd1327"]
 
@@ -71,6 +73,8 @@ class OledCountDisplay:
 
         self._font = self._load_best_font()
         self._last_count: int | None = None
+        self._phase: float = 0.0
+        self._last_render_time: float = time.monotonic()
 
     def render_message(self, message: str, position: tuple[int, int] = (0, 0)) -> None:
         with self._canvas(self._device) as draw:
@@ -99,25 +103,37 @@ class OledCountDisplay:
         return ImageFont.load_default()
 
     def render_count(self, count: int) -> None:
-        if count == self._last_count:
-            return
-
         self._last_count = count
-        text = str(count)
+        now = time.monotonic()
+        dt = max(0.0, min(0.2, now - self._last_render_time))
+        self._last_render_time = now
+
+        # Increase vibration speed as more objects are detected.
+        vibration_hz = 1.0 + min(12.0, max(0, count) * 0.8)
+        self._phase = (self._phase + dt * vibration_hz * 2.0 * math.pi) % (2.0 * math.pi)
+
+        width = self._device.width
+        height = self._device.height
+        center_x = width / 2.0
+        center_y = height / 2.0
+        base_radius = max(8.0, min(width, height) * 0.28)
+        samples = 64
+        segments = 7
+        amplitude = max(1.0, min(4.0, base_radius * 0.12))
+        points: list[tuple[float, float]] = []
+
+        for i in range(samples + 1):
+            theta = (i / samples) * 2.0 * math.pi
+            radial_jitter = amplitude * math.sin((segments * theta) + self._phase)
+            radius = base_radius + radial_jitter
+            x = center_x + radius * math.cos(theta)
+            y = center_y + radius * math.sin(theta)
+            points.append((x, y))
 
         with self._canvas(self._device) as draw:
             draw.rectangle(self._device.bounding_box, outline=0, fill=0)
-            if self._font is not None:
-                left, top, right, bottom = draw.textbbox((0, 0), text, font=self._font)
-            else:
-                left, top, right, bottom = draw.textbbox((0, 0), text)
-
-            text_width = right - left
-            text_height = bottom - top
-
-            x = max(0, (self._device.width - text_width) // 2 - left)
-            y = max(0, (self._device.height - text_height) // 2 - top)
-            draw.text((x, y), text, fill=255, font=self._font)
+            draw.line(points, fill=255, width=1)
+            draw.text((1, 1), f"{count}", fill=255)
 
     def close(self) -> None:
         if self._device is None:
