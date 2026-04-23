@@ -11,18 +11,26 @@ import numpy as np
 from ..interfaces import ProcessorResult
 
 
-MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/object_detector/"
-    "efficientdet_lite0/int8/1/efficientdet_lite0.tflite"
-)
+MODEL_URLS: dict[str, str] = {
+    "efficientdet_lite0": (
+        "https://storage.googleapis.com/mediapipe-models/object_detector/"
+        "efficientdet_lite0/int8/1/efficientdet_lite0.tflite"
+    ),
+    "efficientdet_lite2": (
+        "https://storage.googleapis.com/mediapipe-models/object_detector/"
+        "efficientdet_lite2/int8/1/efficientdet_lite2.tflite"
+    ),
+}
 
 
 @dataclass
 class ObjectDetectorConfig:
     model_path: str | None = None
+    model_variant: str = "efficientdet_lite0"
     max_results: int = 5
     score_threshold: float = 0.25
-    label_filter: tuple[str, ...] = ("box", "package", "parcel", "carton")
+    label_filter: tuple[str, ...] | None = None
+    draw_count: bool = True
 
 
 def _resolve_object_detector_model(config: ObjectDetectorConfig) -> str:
@@ -32,12 +40,19 @@ def _resolve_object_detector_model(config: ObjectDetectorConfig) -> str:
             raise FileNotFoundError(f"Object detector model not found: {model_path}")
         return str(model_path)
 
+    if config.model_variant not in MODEL_URLS:
+        variants = ", ".join(sorted(MODEL_URLS))
+        raise ValueError(
+            f"Unsupported model variant {config.model_variant!r}. "
+            f"Supported variants: {variants}."
+        )
+
     cache_dir = Path.home() / ".cache" / "retail-inventory-manager"
     cache_dir.mkdir(parents=True, exist_ok=True)
-    default_model = cache_dir / "efficientdet_lite0.tflite"
+    default_model = cache_dir / f"{config.model_variant}.tflite"
 
     if not default_model.exists():
-        urlretrieve(MODEL_URL, default_model)
+        urlretrieve(MODEL_URLS[config.model_variant], default_model)
 
     return str(default_model)
 
@@ -84,7 +99,19 @@ class ObjectDetectorProcessor:
             labels.append(label)
             cv2.putText(frame, label, (x1, max(20, y1 - 8)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (50, 200, 255), 2)
 
-        return ProcessorResult(name=self.name, data={"detections": labels})
+        count = len(labels)
+        if self.config.draw_count:
+            cv2.putText(
+                frame,
+                f"Objects: {count}",
+                (12, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.8,
+                (50, 200, 255),
+                2,
+            )
+
+        return ProcessorResult(name=self.name, data={"detections": labels, "count": count})
 
     def close(self) -> None:
         self.detector.close()
