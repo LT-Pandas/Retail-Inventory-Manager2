@@ -1,6 +1,6 @@
 # Retail Inventory Manager (Raspberry Pi + OpenCV)
 
-This project runs real-time hand/finger counting and box detection on a Raspberry Pi camera feed, with optional outputs to:
+This project runs real-time object detection on a Raspberry Pi camera feed, with optional outputs to:
 - an SPI OLED display,
 - BLE (nRF Connect).
 
@@ -16,17 +16,13 @@ This project runs real-time hand/finger counting and box detection on a Raspberr
 │   ├── oled_display.py                     # SPI OLED output (luma.oled)
 │   ├── ble_uint8.py                        # BLE uint8 GATT server (optional)
 │   └── processors/
-│       ├── hand_box_detector.py            # Combined hand + box processor
-│       ├── finger_counter.py               # Hand tracking + finger counting
-│       ├── box_detector.py                 # Contour-based rectangular box detection
-│       └── object_detector.py              # Optional MediaPipe object detector
+│       └── object_detector.py              # MediaPipe object detector
 └── docs/
     └── CARDBOARD_MODEL_TRAINING.md         # Optional model-training workflow docs
 ```
 
 Notes:
-- `run_cv.py` uses `HandBoxDetectorProcessor` by default.
-- `ObjectDetectorProcessor` is optional and only used when `--detect-objects` (or `--object-model`) is passed.
+- `run_cv.py` is now focused on `ObjectDetectorProcessor`.
 
 ---
 
@@ -115,7 +111,7 @@ pip install gpiozero bluezero mediapipe
 
 (Install only the ones you plan to use.)
 
-## B) Standard run (camera + hand/box detection + OLED enabled by default)
+## B) Standard run (camera + object detection + OLED enabled by default)
 
 ```bash
 python run_cv.py
@@ -145,20 +141,32 @@ Enable BLE uint8 server:
 python run_cv.py --ble-enabled --ble-adapter-address B8:27:EB:00:00:01
 ```
 
-Enable optional MediaPipe object detection:
+Object detection is enabled by default:
 
 ```bash
-python run_cv.py --detect-objects
+python run_cv.py
+```
+
+Higher-accuracy MediaPipe model (slower):
+
+```bash
+python run_cv.py --detect-objects --object-model-variant efficientdet_lite2
+```
+
+Reduce false positives with threshold + label filtering:
+
+```bash
+python run_cv.py --detect-objects --object-score-threshold 0.4 --object-label-filter box carton package
 ```
 
 ---
 
 ## 6) Runtime outputs (what updates where)
 - OpenCV window overlay:
-  - Finger count (`Fingers: N`)
-  - Box count (`Boxes: N`)
-- OLED: shows the latest finger count as a single large number.
-- BLE: exposes current count as uint8 characteristic; notify using key `o`.
+  - Object count (`Objects: N`)
+  - A closed bounding frame for each detected object.
+- OLED: shows the latest object count as a single large number.
+- BLE: exposes current object count as uint8 characteristic; notify using key `o`.
 
 ---
 
@@ -166,3 +174,7 @@ python run_cv.py --detect-objects
 - Dual-camera stream requires two working indexes, e.g. `--camera-index 0 --fallback-camera-indexes 1`.
 - OLED init fails: try explicit `--oled-driver sh1107` (or `ssd1309` / `ssd1327`).
 - Button not responding: verify BCM numbering and physical wiring (GPIO17 is physical pin 11).
+- Object detection poor quality:
+  - Try `--object-model-variant efficientdet_lite2` (better accuracy, lower FPS).
+  - Raise `--object-score-threshold` to reduce false positives, or lower it slightly to catch missed detections.
+  - Provide `--object-label-filter ...` only if you are sure of expected labels; leaving it unset keeps all labels.
