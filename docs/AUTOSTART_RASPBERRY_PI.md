@@ -15,6 +15,7 @@ What this does:
 - creates `/etc/systemd/system/retail-inventory-manager.service`
 - enables it at boot (`systemctl enable`)
 - starts/restarts it immediately
+- runs in `--headless --button-controlled --button-gpio-pin 17` mode by default, so it starts on reboot and waits for the run button press
 
 ## 2) Verify it is running
 
@@ -28,6 +29,7 @@ journalctl -u retail-inventory-manager.service -f
 The installer accepts environment overrides:
 
 ```bash
+# Optional: override defaults if you want a different launch mode.
 RUN_ARGS="--headless --button-controlled --button-gpio-pin 17" ./deploy/systemd/install_autostart_service.sh
 ```
 

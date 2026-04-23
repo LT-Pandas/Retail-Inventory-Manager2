@@ -9,7 +9,7 @@ User=pi
 Group=pi
 WorkingDirectory=/home/pi/Retail-Inventory-Manager2
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/pi/Retail-Inventory-Manager2/mp-venv/bin/python /home/pi/Retail-Inventory-Manager2/run_cv.py --headless
+ExecStart=/home/pi/Retail-Inventory-Manager2/mp-venv/bin/python /home/pi/Retail-Inventory-Manager2/run_cv.py --headless --button-controlled --button-gpio-pin 17
 Restart=always
 RestartSec=5
 

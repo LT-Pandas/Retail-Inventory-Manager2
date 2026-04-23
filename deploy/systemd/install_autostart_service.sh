@@ -5,7 +5,7 @@ SERVICE_NAME="retail-inventory-manager.service"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PYTHON_BIN_DEFAULT="$REPO_DIR/mp-venv/bin/python"
 PYTHON_BIN="${PYTHON_BIN:-$PYTHON_BIN_DEFAULT}"
-RUN_ARGS="${RUN_ARGS:---headless}"
+RUN_ARGS="${RUN_ARGS:---headless --button-controlled --button-gpio-pin 17}"
 TARGET_USER="${TARGET_USER:-${SUDO_USER:-$USER}}"
 TARGET_GROUP="${TARGET_GROUP:-$TARGET_USER}"
 
