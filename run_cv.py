@@ -66,6 +66,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--camera-saturation", type=float, default=1.15, help="Camera saturation control.")
     parser.add_argument("--camera-sharpness", type=float, default=1.0, help="Camera sharpness control.")
     parser.add_argument(
+        "--display-scale",
+        type=float,
+        default=0.6,
+        help=(
+            "Scale factor used for the on-screen preview window. "
+            "Use values < 1.0 to shrink the stitched camera frame so it fits on one screen."
+        ),
+    )
+    parser.add_argument(
         "--no-camera-autofocus",
         action="store_true",
         help="Disable camera autofocus if your module supports focus controls.",
@@ -263,6 +272,7 @@ def main() -> None:
             camera_sharpness=args.camera_sharpness,
             camera_autofocus=not args.no_camera_autofocus,
             camera_lens_position=args.camera_lens_position,
+            display_scale=args.display_scale,
             on_key=on_key,
         )
 
