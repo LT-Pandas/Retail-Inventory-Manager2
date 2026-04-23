@@ -49,6 +49,7 @@ def run_webcam_loop(
     camera_sharpness: float = 1.0,
     camera_autofocus: bool = True,
     camera_lens_position: float | None = None,
+    display_scale: float = 0.6,
     should_stop: Callable[[], bool] | None = None,
     on_key: Callable[[int], bool] | None = None,
     show_window: bool = True,
@@ -58,19 +59,25 @@ def run_webcam_loop(
         for index in fallback_camera_indexes:
             if index not in candidate_indexes:
                 candidate_indexes.append(index)
+    if len(candidate_indexes) < 2:
+        raise RuntimeError(
+            "Dual-camera mode requires two unique indexes. "
+            "Provide --camera-index and at least one --fallback-camera-indexes value."
+        )
 
-    picam2 = None
-    selected_index = None
-    for index in candidate_indexes:
-        candidate = None
+    selected_indexes = candidate_indexes[:2]
+    cameras: list[Picamera2] = []
+    opened_indexes: list[int] = []
+    for index in selected_indexes:
+        camera = None
         try:
-            candidate = Picamera2(camera_num=index)
-            config = candidate.create_preview_configuration(
+            camera = Picamera2(camera_num=index)
+            config = camera.create_preview_configuration(
                 main={"format": "RGB888", "size": (camera_width, camera_height)}
             )
-            candidate.configure(config)
+            camera.configure(config)
             frame_duration_us = int(1_000_000 / max(1, camera_fps))
-            candidate.set_controls(
+            camera.set_controls(
                 {
                     "FrameDurationLimits": (frame_duration_us, frame_duration_us),
                     "AeEnable": True,
@@ -89,42 +96,73 @@ def run_webcam_loop(
 
             for control_name, control_value in optional_controls.items():
                 try:
-                    candidate.set_controls({control_name: control_value})
+                    camera.set_controls({control_name: control_value})
                 except Exception:
                     pass
-            candidate.start()
-            candidate.capture_array()
-            picam2 = candidate
-            selected_index = index
-            if index != camera_index:
-                print(f"Primary webcam index={camera_index} unavailable. Using fallback index={index}.")
-            break
+            camera.start()
+            camera.capture_array()
+            cameras.append(camera)
+            opened_indexes.append(index)
         except Exception:
-            if candidate is not None:
+            if camera is not None:
                 try:
-                    candidate.stop()
+                    camera.stop()
                 except Exception:
                     pass
 
-    if picam2 is None:
-        attempted = ", ".join(str(index) for index in candidate_indexes)
-        raise RuntimeError(f"Unable to open webcam. Tried indexes: {attempted}")
+    if len(cameras) != 2:
+        attempted = ", ".join(str(index) for index in selected_indexes)
+        opened = ", ".join(str(index) for index in opened_indexes) or "none"
+        for camera in cameras:
+            try:
+                camera.stop()
+            except Exception:
+                pass
+        raise RuntimeError(
+            f"Unable to open two webcams. Requested indexes: {attempted}; opened: {opened}."
+        )
+    print(f"Dual-camera stream active with indexes={opened_indexes[0]},{opened_indexes[1]}.")
 
     try:
         while True:
             if should_stop is not None and should_stop():
                 break
             try:
-                frame = picam2.capture_array()
-                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                frames_bgr: list[np.ndarray] = []
+                for camera in cameras:
+                    frame = camera.capture_array()
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    frames_bgr.append(frame)
             except Exception:
-                if selected_index is not None:
-                    print(f"Webcam read failed for index={selected_index}.")
+                print("Webcam read failed for one of the active cameras.")
                 break
 
-            output = pipeline.step(frame)
+            # Keep frames crisp by avoiding interpolation-based resizing.
+            # If camera outputs differ slightly in size, center-crop to the common height.
+            min_height = min(frame.shape[0] for frame in frames_bgr)
+            normalized_frames = []
+            for frame in frames_bgr:
+                if frame.shape[0] != min_height:
+                    delta = frame.shape[0] - min_height
+                    top = max(0, delta // 2)
+                    bottom = top + min_height
+                    frame = frame[top:bottom, :]
+                normalized_frames.append(frame)
+
+            stitched_frame = cv2.hconcat(normalized_frames)
+            output = pipeline.step(stitched_frame)
             if on_output is not None:
                 on_output(output)
+            frame_to_show = output.frame
+            if display_scale > 0 and display_scale != 1.0:
+                frame_to_show = cv2.resize(
+                    output.frame,
+                    None,
+                    fx=display_scale,
+                    fy=display_scale,
+                    interpolation=cv2.INTER_AREA,
+                )
+            cv2.imshow(window_name, frame_to_show)
 
             if show_window:
                 cv2.imshow(window_name, output.frame)
@@ -135,7 +173,11 @@ def run_webcam_loop(
                     if on_key(key):
                         break
     finally:
-        picam2.stop()
+        for camera in cameras:
+            try:
+                camera.stop()
+            except Exception:
+                pass
         pipeline.close()
         if show_window:
             cv2.destroyAllWindows()

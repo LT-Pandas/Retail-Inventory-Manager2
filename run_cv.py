@@ -8,64 +8,92 @@ from cv_modular.ble_uint8 import BleUint8Server, BleUint8ServerConfig
 from cv_modular.oled_display import OledCountDisplay, OledDisplayConfig
 from cv_modular.processors import (
     BoxDetectorConfig,
-    FingerCounterConfig,
-    HandBoxDetectorConfig,
-    HandBoxDetectorProcessor,
-    ObjectDetectorConfig,
-    ObjectDetectorProcessor,
+    BoxDetectorProcessor,
 )
 
 
-def _extract_finger_total(results) -> int | None:
+def _extract_object_total(results) -> int | None:
     for result in results:
-        if result.name == "hand_box_detector":
-            return result.data.get("hands", {}).get("total")
-        if result.name == "finger_counter":
-            return result.data.get("total")
+        if result.name == "box_detector":
+            return result.data.get("count")
     return None
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Modular OpenCV CV demo")
+    parser = argparse.ArgumentParser(description="Object detection CV demo")
     parser.add_argument("--camera-index", type=int, default=0)
     parser.add_argument(
         "--fallback-camera-indexes",
         type=int,
         nargs="*",
         default=[1],
-        help="Fallback camera indexes to try if --camera-index fails (default: 1).",
-    )
-    parser.add_argument("--max-num-hands", type=int, default=1)
-    parser.add_argument("--min-detection-confidence", type=float, default=0.6)
-    parser.add_argument("--min-tracking-confidence", type=float, default=0.5)
-    parser.add_argument("--min-presence-confidence", type=float, default=0.5)
-    parser.add_argument(
-        "--hand-model",
-        type=str,
-        default=None,
-        help="Deprecated: kept for backward compatibility; OpenCV hand tracking ignores this.",
+        help="Additional camera indexes; first unique value is stitched with --camera-index (default: 1).",
     )
     parser.add_argument(
-        "--no-assume-selfie-view",
-        action="store_true",
-        help="Use this when the incoming image is not mirrored.",
-    )
-    parser.add_argument(
-        "--detect-objects",
-        action="store_true",
-        help="Enable optional MediaPipe object detection (auto-downloads default model).",
-    )
-    parser.add_argument(
-        "--object-model",
-        type=str,
-        default=None,
-        help="Optional path to an object detection .tflite model. If omitted, a default model is downloaded.",
-    )
-    parser.add_argument(
-        "--box-min-area",
+        "--min-object-area",
         type=int,
         default=2500,
-        help="Minimum contour area for a candidate box.",
+        help="Minimum contour area for an object candidate.",
+    )
+    parser.add_argument(
+        "--object-epsilon-ratio",
+        type=float,
+        default=0.04,
+        help="Contour simplification epsilon ratio used in polygon approximation.",
+    )
+    parser.add_argument(
+        "--object-min-aspect-ratio",
+        type=float,
+        default=0.1,
+        help="Minimum bounding box aspect ratio for contour-based object detection.",
+    )
+    parser.add_argument(
+        "--object-max-aspect-ratio",
+        type=float,
+        default=10.0,
+        help="Maximum bounding box aspect ratio for contour-based object detection.",
+    )
+    parser.add_argument(
+        "--stereo-calibration-file",
+        type=str,
+        default="stereo_calibration.npz",
+        help="Optional .npz file containing rectification maps for left/right cameras.",
+    )
+    parser.add_argument(
+        "--stereo-disparity-threshold",
+        type=float,
+        default=1.0,
+        help="Minimum disparity considered foreground in stereo depth mask.",
+    )
+    parser.add_argument(
+        "--depth-merge-threshold",
+        type=float,
+        default=4.0,
+        help="Maximum disparity delta to merge nearby color blobs into one object.",
+    )
+    parser.add_argument(
+        "--object-min-edge-ratio",
+        type=float,
+        default=0.012,
+        help="Minimum edge density inside a candidate; helps reject soft shadows.",
+    )
+    parser.add_argument(
+        "--stereo-processing-scale",
+        type=float,
+        default=0.6,
+        help="Downscale factor used internally for stereo matching to improve FPS (0.25-1.0).",
+    )
+    parser.add_argument(
+        "--stereo-bbox-merge-gap",
+        type=int,
+        default=42,
+        help="Maximum pixel gap between components eligible for depth-based merge.",
+    )
+    parser.add_argument(
+        "--mask-alpha",
+        type=float,
+        default=0.28,
+        help="Opacity of rendered object masks on the left camera frame.",
     )
     parser.add_argument("--camera-width", type=int, default=1920, help="Camera capture width in pixels.")
     parser.add_argument("--camera-height", type=int, default=1080, help="Camera capture height in pixels.")
@@ -79,6 +107,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--camera-contrast", type=float, default=1.2, help="Camera contrast control.")
     parser.add_argument("--camera-saturation", type=float, default=1.15, help="Camera saturation control.")
     parser.add_argument("--camera-sharpness", type=float, default=1.0, help="Camera sharpness control.")
+    parser.add_argument(
+        "--display-scale",
+        type=float,
+        default=0.6,
+        help=(
+            "Scale factor used for the on-screen preview window. "
+            "Use values < 1.0 to shrink the stitched camera frame so it fits on one screen."
+        ),
+    )
     parser.add_argument(
         "--no-camera-autofocus",
         action="store_true",
@@ -112,19 +149,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--ble-service-uuid",
         type=str,
         default="12345678-1234-5678-1234-56789abcdef0",
-        help="BLE service UUID for finger count.",
+        help="BLE service UUID for object count.",
     )
     parser.add_argument(
         "--ble-characteristic-uuid",
         type=str,
         default="12345678-1234-5678-1234-56789abcdef1",
-        help="BLE characteristic UUID for uint8 finger count.",
+        help="BLE characteristic UUID for uint8 object count.",
     )
     parser.add_argument(
         "--oled-enabled",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Enable OLED SPI output for finger count (default: enabled). Use --no-oled-enabled to disable.",
+        help="Enable OLED SPI output for object count (default: enabled). Use --no-oled-enabled to disable.",
     )
     parser.add_argument(
         "--oled-driver",
@@ -186,29 +223,22 @@ def main() -> None:
     args = build_parser().parse_args()
 
     processors = [
-        HandBoxDetectorProcessor(
-            HandBoxDetectorConfig(
-                hand=FingerCounterConfig(
-                    max_num_hands=args.max_num_hands,
-                    min_detection_confidence=args.min_detection_confidence,
-                    min_tracking_confidence=args.min_tracking_confidence,
-                    min_presence_confidence=args.min_presence_confidence,
-                    assume_selfie_view=not args.no_assume_selfie_view,
-                    model_path=args.hand_model,
-                ),
-                box=BoxDetectorConfig(min_area=args.box_min_area),
+        BoxDetectorProcessor(
+            BoxDetectorConfig(
+                min_area=args.min_object_area,
+                epsilon_ratio=args.object_epsilon_ratio,
+                min_aspect_ratio=args.object_min_aspect_ratio,
+                max_aspect_ratio=args.object_max_aspect_ratio,
+                disparity_foreground_threshold=args.stereo_disparity_threshold,
+                depth_merge_threshold=args.depth_merge_threshold,
+                min_edge_ratio=args.object_min_edge_ratio,
+                bbox_gap_merge_px=args.stereo_bbox_merge_gap,
+                mask_alpha=args.mask_alpha,
+                processing_scale=args.stereo_processing_scale,
+                calibration_file=args.stereo_calibration_file,
             )
         )
     ]
-
-    if (args.detect_objects or args.object_model) and (ObjectDetectorProcessor is None or ObjectDetectorConfig is None):
-        raise RuntimeError(
-            "Object detection requires MediaPipe, which is not installed. "
-            "Disable --detect-objects or install mediapipe."
-        )
-
-    if args.detect_objects or args.object_model:
-        processors.append(ObjectDetectorProcessor(ObjectDetectorConfig(model_path=args.object_model)))
     pipeline = CVPipeline(processors)
 
     button = None
@@ -267,7 +297,7 @@ def main() -> None:
 
     def on_output(output) -> None:
         nonlocal last_total
-        total = _extract_finger_total(output.results)
+        total = _extract_object_total(output.results)
         if total is None:
             return
         last_total = total
@@ -281,7 +311,7 @@ def main() -> None:
     def on_key(key: int) -> bool:
         if key == ord("o") and ble_server is not None:
             if last_total is None:
-                print("No finger count available yet; nothing sent over BLE.")
+                print("No object count available yet; nothing sent over BLE.")
                 return False
             ble_server.set_value(last_total)
             ble_server.notify()
@@ -303,6 +333,7 @@ def main() -> None:
             camera_sharpness=args.camera_sharpness,
             camera_autofocus=not args.no_camera_autofocus,
             camera_lens_position=args.camera_lens_position,
+            display_scale=args.display_scale,
             on_key=on_key,
             show_window=not args.headless,
         )

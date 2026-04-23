@@ -1,6 +1,6 @@
 # Retail Inventory Manager (Raspberry Pi + OpenCV)
 
-This project runs real-time hand/finger counting and box detection on a Raspberry Pi camera feed, with optional outputs to:
+This project runs real-time object detection on a Raspberry Pi camera feed, with optional outputs to:
 - an SPI OLED display,
 - BLE (nRF Connect).
 
@@ -16,17 +16,13 @@ This project runs real-time hand/finger counting and box detection on a Raspberr
 │   ├── oled_display.py                     # SPI OLED output (luma.oled)
 │   ├── ble_uint8.py                        # BLE uint8 GATT server (optional)
 │   └── processors/
-│       ├── hand_box_detector.py            # Combined hand + box processor
-│       ├── finger_counter.py               # Hand tracking + finger counting
-│       ├── box_detector.py                 # Contour-based rectangular box detection
-│       └── object_detector.py              # Optional MediaPipe object detector
+│       └── box_detector.py                 # OpenCV contour-based object detector
 └── docs/
     └── CARDBOARD_MODEL_TRAINING.md         # Optional model-training workflow docs
 ```
 
 Notes:
-- `run_cv.py` uses `HandBoxDetectorProcessor` by default.
-- `ObjectDetectorProcessor` is optional and only used when `--detect-objects` (or `--object-model`) is passed.
+- `run_cv.py` uses OpenCV and now supports stereo depth-aware mask generation from a dual-camera feed.
 
 ---
 
@@ -45,7 +41,6 @@ luma.core>=2.4.2
 - `picamera2` (required on Raspberry Pi for camera capture).
 - `gpiozero` (required only for `--button-controlled`).
 - `bluezero` (required only for `--ble-enabled`).
-- `mediapipe` (required only for `--detect-objects` / `--object-model`).
 
 ## D) Arduino simple LED setup
 Arduino sketch LED pins:
@@ -110,12 +105,12 @@ pip install -r requirements.txt
 Install optional packages only when needed:
 
 ```bash
-pip install gpiozero bluezero mediapipe
+pip install gpiozero bluezero
 ```
 
 (Install only the ones you plan to use.)
 
-## B) Standard run (camera + hand/box detection + OLED enabled by default)
+## B) Standard run (camera + object detection + OLED enabled by default)
 
 ```bash
 python run_cv.py
@@ -145,10 +140,44 @@ Enable BLE uint8 server:
 python run_cv.py --ble-enabled --ble-adapter-address B8:27:EB:00:00:01
 ```
 
-Enable optional MediaPipe object detection:
+Object detection is enabled by default:
 
 ```bash
-python run_cv.py --detect-objects
+python run_cv.py
+```
+
+Tune contour sensitivity for your setup:
+
+```bash
+python run_cv.py --min-object-area 1800 --object-epsilon-ratio 0.03
+```
+
+Reduce shadow false positives by requiring more texture/edges in candidates:
+
+```bash
+python run_cv.py --object-min-edge-ratio 0.02
+```
+
+Increase frame rate by running stereo matching on a downscaled internal image:
+
+```bash
+python run_cv.py --stereo-processing-scale 0.5
+```
+
+Enable depth-informed merging of nearby color blobs (single physical object with multiple colors):
+
+```bash
+python run_cv.py \
+  --stereo-calibration-file stereo_calibration.npz \
+  --stereo-disparity-threshold 1.2 \
+  --depth-merge-threshold 4.0 \
+  --stereo-bbox-merge-gap 42
+```
+
+Constrain object shape if needed:
+
+```bash
+python run_cv.py --object-min-aspect-ratio 0.6 --object-max-aspect-ratio 1.8
 ```
 
 Headless mode (no monitor attached):
@@ -169,14 +198,21 @@ See detailed steps: `docs/AUTOSTART_RASPBERRY_PI.md`.
 
 ## 6) Runtime outputs (what updates where)
 - OpenCV window overlay:
-  - Finger count (`Fingers: N`)
-  - Box count (`Boxes: N`)
-- OLED: shows the latest finger count as a single large number.
-- BLE: exposes current count as uint8 characteristic; notify using key `o`.
+  - Object count (`Objects: N`)
+  - A closed bounding frame for each detected object.
+- OLED: shows the latest object count as a single large number.
+- BLE: exposes current object count as uint8 characteristic; notify using key `o`.
 
 ---
 
 ## 7) Quick troubleshooting
-- Camera fails to open: try `--camera-index 0 --fallback-camera-indexes 1`.
+- Dual-camera stream requires two working indexes, e.g. `--camera-index 0 --fallback-camera-indexes 1`.
+- If the window shows `Stereo not rectified (no calibration maps)`, provide `--stereo-calibration-file <file>.npz` containing left/right rectification maps.
 - OLED init fails: try explicit `--oled-driver sh1107` (or `ssd1309` / `ssd1327`).
 - Button not responding: verify BCM numbering and physical wiring (GPIO17 is physical pin 11).
+- Object detection poor quality:
+  - Increase `--min-object-area` if noise/small contours are getting counted.
+  - Lower `--min-object-area` if valid objects are being missed.
+  - Tighten `--object-min-aspect-ratio` / `--object-max-aspect-ratio` to match expected object shape.
+  - Raise `--object-min-edge-ratio` if shadows are frequently detected as objects.
+  - Lower `--stereo-processing-scale` (for example, `0.5`) to improve FPS on slower hardware.
