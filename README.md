@@ -180,6 +180,20 @@ Constrain object shape if needed:
 python run_cv.py --object-min-aspect-ratio 0.6 --object-max-aspect-ratio 1.8
 ```
 
+Headless mode (no monitor attached):
+
+```bash
+python run_cv.py --headless
+```
+
+Install systemd autostart on Raspberry Pi (runs on boot):
+
+```bash
+./deploy/systemd/install_autostart_service.sh
+```
+
+See detailed steps: `docs/AUTOSTART_RASPBERRY_PI.md`.
+
 ---
 
 ## 6) Runtime outputs (what updates where)

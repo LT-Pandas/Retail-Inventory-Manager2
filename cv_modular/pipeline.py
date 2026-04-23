@@ -52,6 +52,7 @@ def run_webcam_loop(
     display_scale: float = 0.6,
     should_stop: Callable[[], bool] | None = None,
     on_key: Callable[[int], bool] | None = None,
+    show_window: bool = True,
 ) -> None:
     candidate_indexes: list[int] = [camera_index]
     if fallback_camera_indexes:
@@ -163,12 +164,14 @@ def run_webcam_loop(
                 )
             cv2.imshow(window_name, frame_to_show)
 
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q"):
-                break
-            if on_key is not None and key != 255:
-                if on_key(key):
+            if show_window:
+                cv2.imshow(window_name, output.frame)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q"):
                     break
+                if on_key is not None and key != 255:
+                    if on_key(key):
+                        break
     finally:
         for camera in cameras:
             try:
@@ -176,4 +179,5 @@ def run_webcam_loop(
             except Exception:
                 pass
         pipeline.close()
-        cv2.destroyAllWindows()
+        if show_window:
+            cv2.destroyAllWindows()
