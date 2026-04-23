@@ -44,13 +44,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--object-min-aspect-ratio",
         type=float,
-        default=0.5,
+        default=0.1,
         help="Minimum bounding box aspect ratio for contour-based object detection.",
     )
     parser.add_argument(
         "--object-max-aspect-ratio",
         type=float,
-        default=2.2,
+        default=10.0,
         help="Maximum bounding box aspect ratio for contour-based object detection.",
     )
     parser.add_argument("--camera-width", type=int, default=1920, help="Camera capture width in pixels.")
