@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import time
 from collections import deque
+from datetime import datetime
 
 import cv2
 import numpy as np
@@ -88,6 +89,16 @@ def _build_live_count_graph_frame(
             1,
             cv2.LINE_AA,
         )
+        cv2.putText(
+            frame,
+            "Time",
+            (graph_left + (graph_width // 2) - 16, graph_bottom + 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (220, 220, 220),
+            1,
+            cv2.LINE_AA,
+        )
         return frame
 
     max_value = max(1, max(history_values))
@@ -98,17 +109,9 @@ def _build_live_count_graph_frame(
         y = graph_bottom - int(normalized * graph_height)
         points.append((x, y))
 
-    if len(points) >= 2:
-        area_points = [(points[0][0], graph_bottom), *points, (points[-1][0], graph_bottom)]
-        area = np.array(area_points, dtype=np.int32).reshape((-1, 1, 2))
-        area_overlay = frame.copy()
-        cv2.fillPoly(area_overlay, [area], (245, 170, 55))
-        cv2.addWeighted(area_overlay, 0.20, frame, 0.80, 0, frame)
-
-        line_points = np.array(points, dtype=np.int32).reshape((-1, 1, 2))
-        cv2.polylines(frame, [line_points], False, (80, 220, 255), 3, cv2.LINE_AA)
-
-        cv2.circle(frame, points[-1], 5, (85, 255, 120), -1, cv2.LINE_AA)
+    for point in points[:-1]:
+        cv2.circle(frame, point, 3, (80, 220, 255), -1, cv2.LINE_AA)
+    cv2.circle(frame, points[-1], 5, (85, 255, 120), -1, cv2.LINE_AA)
 
     cv2.putText(
         frame,
@@ -127,6 +130,26 @@ def _build_live_count_graph_frame(
         cv2.FONT_HERSHEY_SIMPLEX,
         0.45,
         (220, 220, 220),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        "Time",
+        (graph_left + (graph_width // 2) - 16, graph_bottom + 24),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.5,
+        (220, 220, 220),
+        1,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        frame,
+        datetime.now().strftime("%H:%M:%S"),
+        (graph_right - 85, graph_bottom + 24),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.45,
+        (180, 180, 180),
         1,
         cv2.LINE_AA,
     )
